@@ -1,0 +1,428 @@
+# Aity Drive iOS Factory lanes.
+#
+# This file is copied by scripts/materialize.sh over the Pin's
+# fastlane/Fastfile and runs from INSIDE the materialised tree
+# (build/upstream). All identity rewriting below is a faithful
+# transcription of the Pin's own branding flow - the `build_ipa_in_house`
+# lane of upstream fastlane/Fastfile at v12.7.0 - using the same fastlane
+# actions on the same files in the same order, driven by the same
+# Branding.plist build.* keys. We do not call their lane directly because
+# (a) it hardcodes ownCloud's team, signing identities and the
+# com.owncloud.ownCloudAppShared framework id, and (b) it has no unsigned
+# simulator path. ON EVERY BUMP: diff upstream's build_ipa_in_house against
+# aity_apply_identity below and fold in changes (MAINTAINING.md).
+#
+# Lanes:
+#   build_simulator_smoke    unsigned simulator build + XCUITest login-screen
+#                            smoke (no Apple account needed)
+#   build_staging_testflight staging IPA -> TestFlight internal
+#   build_production_appstore production IPA -> App Store Connect upload
+#
+# Environment selection comes from build/upstream/.aity-environment written
+# by scripts/materialize.sh - lanes never guess, they fail if the marker or
+# the Branding.plist does not match expectations.
+
+default_platform(:ios)
+
+# Repo root of the FACTORY checkout (this file lives at
+# <factory>/build/upstream/fastlane/Fastfile once materialised).
+FACTORY_ROOT = File.expand_path("../../..", __dir__)
+
+THEME_FOLDER = "ownCloud/Resources/Theming/"
+THEME_PLIST = THEME_FOLDER + "Branding.plist"
+
+# The identity table of meta/specs/aity-drive-v1.md, decision 4.
+AITY_IDENTITY = {
+  "production" => { app_name: "Aity Drive", app_id: "tech.aity.drive" },
+  "staging" => { app_name: "Aity Drive (staging)", app_id: "tech.aity.drive.staging" }
+}.freeze
+
+def aity_environment
+  marker = File.expand_path("../.aity-environment", __dir__)
+  unless File.exist?(marker)
+    UI.user_error!("No .aity-environment marker - run scripts/materialize.sh <production|staging> first")
+  end
+  env = File.read(marker).strip
+  UI.user_error!("Unknown environment '#{env}' in .aity-environment") unless AITY_IDENTITY.key?(env)
+  env
+end
+
+def aity_ids(env)
+  app_id = AITY_IDENTITY[env][:app_id]
+  {
+    app: app_id,
+    fileprovider: "#{app_id}.fileprovider",
+    fileprovider_ui: "#{app_id}.fileprovider-ui",
+    intents: "#{app_id}.intents",
+    share: "#{app_id}.share",
+    action: "#{app_id}.action",
+    # Embedded frameworks: not part of the store identity table, rewritten
+    # anyway so no bundle id of ours carries the upstream trademark.
+    framework: "#{app_id}.framework",
+    shared: "#{app_id}.shared",
+    group: "group.#{app_id}"
+  }
+end
+
+def aity_require_env(vars)
+  missing = vars.reject { |v| ENV[v].to_s.strip.length.positive? }
+  return if missing.empty?
+
+  UI.user_error!(
+    "Missing required variables: #{missing.join(', ')}. " \
+    "These are protected CI variables on the ios Factory project - see " \
+    "meta/docs/runbooks/publisher-accounts.md (ASC_*/MATCH_*) and the " \
+    "identity table in meta/specs/aity-drive-v1.md. Nothing is built or " \
+    "signed from a workstation."
+  )
+end
+
+platform :ios do
+  # ---------------------------------------------------------------------
+  # Identity rewriting - transcription of upstream build_ipa_in_house
+  # (fastlane/Fastfile of the Pin; step comments cite it).
+  # ---------------------------------------------------------------------
+  private_lane :aity_apply_identity do |options|
+    env = aity_environment
+    ids = aity_ids(env)
+    app_name = AITY_IDENTITY[env][:app_name]
+    team_id = options[:team_id] # nil for the unsigned simulator build
+
+    # Upstream: Xcode version guard from .xcode-version.
+    if File.exist?("../.xcode-version")
+      ensure_xcode_version(version: File.read("../.xcode-version").strip)
+    end
+
+    UI.user_error!("#{THEME_PLIST} missing - materialize did not lay the overlay") unless File.exist?("../" + THEME_PLIST)
+
+    # Upstream: read build-time keys from Branding.plist.
+    app_build_flags = get_info_plist_value(path: THEME_PLIST, key: "build.flags") || ""
+    app_custom_app_scheme = get_info_plist_value(path: THEME_PLIST, key: "build.custom-app-scheme") || ""
+    app_custom_auth_scheme = get_info_plist_value(path: THEME_PLIST, key: "build.custom-auth-scheme") || ""
+    app_group = get_info_plist_value(path: THEME_PLIST, key: "build.app-group-identifier") || ""
+    UI.user_error!("build.app-group-identifier missing from Branding.plist") if app_group.empty?
+    UI.user_error!("Branding app group '#{app_group}' != identity table '#{ids[:group]}'") if app_group != ids[:group]
+
+    # Upstream: record app + sdk git state in Branding.plist (About screen).
+    commit = sh("git rev-parse --short HEAD").strip
+    sdkcommit = sh("git -C ../ios-sdk/ rev-parse --short HEAD").strip
+    set_info_plist_value(path: THEME_PLIST, key: "GitHash", value: commit)
+    set_info_plist_value(path: THEME_PLIST, key: "SDKGitHash", value: sdkcommit)
+
+    UI.message("Aity identity: env=#{env} app=#{ids[:app]} group=#{ids[:group]} flags='#{app_build_flags}'")
+
+    # Upstream: build flags that must ALSO strip Info.plist preprocessor
+    # sections (set_info_plist_value loses #ifndef blocks, hence sed).
+    if app_build_flags.include?("DISABLE_BACKGROUND_LOCATION")
+      sh "sed '/#ifndef DISABLE_BACKGROUND_LOCATION/,/#endif/d' ../ownCloud/Resources/Info.plist >../ownCloud/Resources/Info.plist.mod"
+      sh "mv ../ownCloud/Resources/Info.plist.mod ../ownCloud/Resources/Info.plist"
+    end
+    if app_build_flags.include?("DISABLE_PLAIN_HTTP")
+      sh "sed '/#ifndef DISABLE_PLAIN_HTTP/,/#endif/d' ../ownCloud/Resources/Info.plist >../ownCloud/Resources/Info.plist.mod"
+      sh "mv ../ownCloud/Resources/Info.plist.mod ../ownCloud/Resources/Info.plist"
+    end
+
+    # Upstream: URL scheme rewriting via the octype markers in
+    # ownCloud/Resources/Info.plist (update_url_schemes cannot reach the
+    # second URL type, so upstream seds the markers; so do we).
+    unless app_custom_app_scheme.empty?
+      sh 'sed "s#<string octype=\"app\">owncloud</string>#<string>' + app_custom_app_scheme + '</string>#" ../ownCloud/Resources/Info.plist >../ownCloud/Resources/Info.plist.mod'
+      sh "mv ../ownCloud/Resources/Info.plist.mod ../ownCloud/Resources/Info.plist"
+    end
+    unless app_custom_auth_scheme.empty?
+      sh 'sed "s#<string octype=\"auth\">oc</string>#<string>' + app_custom_auth_scheme + '</string>#" ../ownCloud/Resources/Info.plist >../ownCloud/Resources/Info.plist.mod'
+      sh "mv ../ownCloud/Resources/Info.plist.mod ../ownCloud/Resources/Info.plist"
+    end
+
+    # Upstream: display names. App, File Provider (+UI): the app name;
+    # Share/Action extensions get their action-phrased names.
+    set_info_plist_value(path: "ownCloud/Resources/Info.plist", key: "CFBundleDisplayName", value: app_name)
+    set_info_plist_value(path: "ownCloud/Resources/Info.plist", key: "CFBundleName", value: app_name)
+    set_info_plist_value(path: "ownCloud File Provider/Info.plist", key: "CFBundleDisplayName", value: app_name)
+    set_info_plist_value(path: "ownCloud File Provider/Info.plist", key: "CFBundleName", value: app_name)
+    set_info_plist_value(path: "ownCloud File Provider UI/Info.plist", key: "CFBundleDisplayName", value: app_name)
+    set_info_plist_value(path: "ownCloud File Provider UI/Info.plist", key: "CFBundleName", value: app_name)
+    set_info_plist_value(path: "ownCloud Share Extension/Info.plist", key: "CFBundleDisplayName", value: "Share to " + app_name)
+    set_info_plist_value(path: "ownCloud Share Extension/Info.plist", key: "CFBundleName", value: app_name)
+    set_info_plist_value(path: "ownCloud Action Extension/Info.plist", key: "CFBundleDisplayName", value: "Save to " + app_name)
+    set_info_plist_value(path: "ownCloud Action Extension/Info.plist", key: "CFBundleName", value: app_name)
+
+    # Upstream: localized Action Extension display names live in an
+    # xcstrings JSON - replace "ownCloud" in every localization.
+    xcstrings_path = "../ownCloud Action Extension/InfoPlist.xcstrings"
+    json_data = JSON.parse(File.read(xcstrings_path))
+    if json_data.dig("strings", "CFBundleDisplayName", "localizations")
+      json_data["strings"]["CFBundleDisplayName"]["localizations"].each_value do |localization|
+        localization["stringUnit"]["value"] = localization["stringUnit"]["value"].gsub("ownCloud", app_name)
+      end
+      File.write(xcstrings_path, JSON.pretty_generate(json_data))
+    else
+      UI.user_error!("CFBundleDisplayName not found in Action Extension InfoPlist.xcstrings - upstream changed the mechanism")
+    end
+
+    # Upstream: build number into every target's Info.plist. Spec: the
+    # build number is CI_PIPELINE_IID, monotonic per Factory.
+    build_number = options[:build_number]
+    if build_number
+      [
+        "ownCloud/Resources/Info.plist",
+        "ownCloud File Provider/Info.plist",
+        "ownCloud File Provider UI/Info.plist",
+        "ownCloud Share Extension/Info.plist",
+        "ownCloud Action Extension/Info.plist",
+        "ownCloud Intents/Info.plist"
+      ].each do |plist|
+        set_info_plist_value(path: plist, key: "CFBundleVersion", value: build_number.to_s)
+      end
+    end
+
+    # Upstream: bundle identifiers via update_app_identifier, one per
+    # Info.plist (app, both file provider parts, app framework, intents,
+    # share, action).
+    {
+      "ownCloud/Resources/Info.plist" => ids[:app],
+      "ownCloud File Provider/Info.plist" => ids[:fileprovider],
+      "ownCloud File Provider UI/Info.plist" => ids[:fileprovider_ui],
+      "ownCloudAppFramework/Resources/Info.plist" => ids[:framework],
+      "ownCloud Intents/Info.plist" => ids[:intents],
+      "ownCloud Share Extension/Info.plist" => ids[:share],
+      "ownCloud Action Extension/Info.plist" => ids[:action]
+    }.each do |plist_path, identifier|
+      update_app_identifier(
+        xcodeproj: "ownCloud.xcodeproj",
+        plist_path: plist_path,
+        app_identifier: identifier
+      )
+    end
+
+    # Upstream: app group + keychain access group in every entitlements
+    # file. The keychain group is Team-ID-prefixed; without a team (the
+    # unsigned simulator build ignores entitlements) a placeholder keeps
+    # the file shape intact.
+    keychain_team = team_id || "AITYSIMULATE"
+    [
+      "ownCloud/ownCloud.entitlements",
+      "ownCloud File Provider/ownCloud_File_Provider.entitlements",
+      "ownCloud File Provider UI/ownCloud_File_Provider_UI.entitlements",
+      "ownCloud Intents/ownCloud Intents.entitlements",
+      "ownCloud Share Extension/ownCloud Share Extension.entitlements",
+      "ownCloud Action Extension/ownCloud Action Extension.entitlements"
+    ].each do |entitlements|
+      update_app_group_identifiers(entitlements_file: entitlements, app_group_identifiers: [ids[:group]])
+      update_keychain_access_groups(entitlements_file: entitlements, identifiers: ["#{keychain_team}.#{ids[:group]}"])
+    end
+
+    # Upstream: OC app group keys + file provider document group.
+    set_info_plist_value(path: "ownCloud File Provider/Info.plist", key: "OCAppGroupIdentifier", value: ids[:group])
+    set_info_plist_value(path: "ownCloud File Provider/Info.plist", key: "OCKeychainAccessGroupIdentifier", value: ids[:group])
+    set_info_plist_value(path: "ownCloud File Provider/Info.plist", key: "NSExtension", subkey: "NSExtensionFileProviderDocumentGroup", value: ids[:group])
+    [
+      "ownCloud File Provider UI/Info.plist",
+      "ownCloud Intents/Info.plist",
+      "ownCloud Share Extension/Info.plist",
+      "ownCloud Action Extension/Info.plist",
+      "ownCloud/Resources/Info.plist"
+    ].each do |plist|
+      set_info_plist_value(path: plist, key: "OCAppGroupIdentifier", value: ids[:group])
+      set_info_plist_value(path: plist, key: "OCKeychainAccessGroupIdentifier", value: ids[:group])
+    end
+
+    # Upstream: regenerate AppIcon.appiconset from the branding icon
+    # (fastlane-plugin-appicon; the Overlay provides branding-icon.png,
+    # STG-badged for staging).
+    aity_generate_appicon
+
+    { env: env, ids: ids, app_name: app_name, build_flags: app_build_flags }
+  end
+
+  # Transcription of upstream's generate_appicon lane.
+  private_lane :aity_generate_appicon do
+    icon_path = THEME_FOLDER + "branding-assets/"
+    icon_name = "branding-icon.png"
+    output_icon_path = "../ownCloud/Resources/Assets.xcassets/"
+    output_icon_name = "AppIcon.appiconset"
+    UI.user_error!("#{icon_path}#{icon_name} missing - the Overlay must provide the app icon source") unless File.exist?("../" + icon_path + icon_name)
+
+    sh("rm -rf " + output_icon_path + output_icon_name + "/*")
+    appicon(
+      appicon_image_file: icon_path + icon_name,
+      appicon_devices: %i[ipad iphone ios_marketing],
+      appicon_path: "ownCloud/Resources/Assets.xcassets/",
+      appicon_name: output_icon_name
+    )
+  end
+
+  # Upstream: manual signing per target (automatic_code_signing with the
+  # match profile names). Only for device/store builds.
+  private_lane :aity_apply_signing do |options|
+    ids = options[:ids]
+    team_id = options[:team_id]
+    identity = options[:identity]
+
+    {
+      "ownCloud" => [ids[:app], "match AppStore #{ids[:app]}"],
+      "ownCloud File Provider" => [ids[:fileprovider], "match AppStore #{ids[:fileprovider]}"],
+      "ownCloud File Provider UI" => [ids[:fileprovider_ui], "match AppStore #{ids[:fileprovider_ui]}"],
+      "ownCloud Intents" => [ids[:intents], "match AppStore #{ids[:intents]}"],
+      "ownCloud Share Extension" => [ids[:share], "match AppStore #{ids[:share]}"],
+      "ownCloud Action Extension" => [ids[:action], "match AppStore #{ids[:action]}"],
+      # Frameworks: signed with the team identity, no provisioning profile
+      # (same shape as upstream's ownCloudApp/ownCloudAppShared entries).
+      "ownCloudApp" => [ids[:framework], nil],
+      "ownCloudAppShared" => [ids[:shared], nil]
+    }.each do |target, (identifier, profile)|
+      params = {
+        path: "ownCloud.xcodeproj",
+        use_automatic_signing: false,
+        team_id: team_id,
+        code_sign_identity: identity,
+        bundle_identifier: identifier,
+        targets: [target]
+      }
+      params[:profile_name] = profile if profile
+      automatic_code_signing(**params)
+    end
+  end
+
+  # Shared store build: match -> identity -> signing -> gym.
+  private_lane :aity_build_signed_ipa do |options|
+    expected_env = options[:expected_env]
+
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 MATCH_PASSWORD MATCH_GIT_PRIVATE_KEY AITY_TEAM_ID])
+    env = aity_environment
+    if env != expected_env
+      UI.user_error!(
+        "Materialised tree is '#{env}' but this lane builds '#{expected_env}' - " \
+        "run scripts/materialize.sh #{expected_env} first"
+      )
+    end
+
+    team_id = ENV.fetch("AITY_TEAM_ID")
+    build_number = ENV["CI_PIPELINE_IID"] || options[:build_number]
+    UI.user_error!("No build number (CI_PIPELINE_IID) - store builds are CI-only") unless build_number
+
+    # Temporary keychain on the runner (mac-runner.md: signing material
+    # never touches the login keychain).
+    setup_ci
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_P8")
+    )
+
+    ids = aity_ids(env)
+    signed_ids = [ids[:app], ids[:fileprovider], ids[:fileprovider_ui], ids[:intents], ids[:share], ids[:action]]
+
+    # Profiles from the private certificates repo (readonly: the store is
+    # bootstrapped once, by hand, per publisher-accounts.md step 2.6).
+    match(
+      type: "appstore",
+      app_identifier: signed_ids,
+      team_id: team_id,
+      readonly: true,
+      api_key: api_key
+    )
+
+    identity_info = aity_apply_identity(team_id: team_id, build_number: build_number)
+    aity_apply_signing(ids: ids, team_id: team_id, identity: "Apple Distribution")
+
+    profile_map = signed_ids.to_h { |id| [id, "match AppStore #{id}"] }
+
+    build_app(
+      project: "ownCloud.xcodeproj",
+      scheme: "ownCloud",
+      configuration: "Release",
+      output_name: "aity-drive-#{env}-#{build_number}.ipa",
+      export_method: "app-store",
+      xcargs: "CODE_SIGN_STYLE=Manual APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
+      export_options: {
+        method: "app-store",
+        provisioningProfiles: profile_map
+      }
+    )
+
+    { api_key: api_key, env: env, build_number: build_number }
+  end
+
+  # ---------------------------------------------------------------------
+  # Public lanes
+  # ---------------------------------------------------------------------
+
+  desc "Unsigned simulator build of the materialised Environment plus the"
+  desc "XCUITest login-screen smoke. Needs no Apple account"
+  desc "(CODE_SIGNING_ALLOWED=NO); needs Xcode, a simulator runtime and"
+  desc "xcodegen (Brewfile)."
+  lane :build_simulator_smoke do
+    env = aity_environment
+    ids = aity_ids(env)
+    identity_info = aity_apply_identity(team_id: nil, build_number: ENV["CI_PIPELINE_IID"])
+
+    derived_data = "../build-simulator"
+    sh "set -o pipefail && xcodebuild build " \
+       "-project ../ownCloud.xcodeproj -scheme ownCloud -configuration Debug " \
+       "-destination 'generic/platform=iOS Simulator' " \
+       "-derivedDataPath #{derived_data} " \
+       "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' " \
+       "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' | tee xcodebuild-simulator.log"
+
+    apps = Dir.glob("#{derived_data}/Build/Products/Debug-iphonesimulator/*.app")
+    UI.user_error!("Simulator build produced no .app under #{derived_data}") if apps.empty?
+    app_path = apps.first
+    UI.success("Simulator app: #{app_path}")
+
+    # Dedicated simulator: created on demand, reused across runs.
+    sim_name = ENV["AITY_SMOKE_SIMULATOR"] || "aity-drive-smoke"
+    sim_device_type = ENV["AITY_SMOKE_DEVICE_TYPE"] || "com.apple.CoreSimulator.SimDeviceType.iPhone-16"
+    sh "xcrun simctl list devices | grep -q '#{sim_name}' || xcrun simctl create '#{sim_name}' '#{sim_device_type}'"
+    sh "xcrun simctl bootstatus '#{sim_name}' -b"
+    sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
+
+    # The smoke XCUITest runner is a standalone xcodegen project in the
+    # factory repo (smoke/); it launches the installed app by bundle id.
+    smoke_dir = File.join(FACTORY_ROOT, "smoke")
+    UI.user_error!("#{smoke_dir}/project.yml missing") unless File.exist?(File.join(smoke_dir, "project.yml"))
+    sh "cd '#{smoke_dir}' && xcodegen generate"
+    sh "set -o pipefail && " \
+       "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}' " \
+       "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}' " \
+       "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
+       "-scheme AityDriveSmokeUITests " \
+       "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
+       "| tee xcodebuild-smoke.log"
+
+    UI.success("Simulator smoke green for #{env} (#{ids[:app]})")
+  end
+
+  desc "Staging Environment IPA, uploaded to the TestFlight internal track"
+  desc "(spec pipeline stage publish-staging). CI-only."
+  lane :build_staging_testflight do
+    result = aity_build_signed_ipa(expected_env: "staging")
+
+    upload_to_testflight(
+      api_key: result[:api_key],
+      app_identifier: aity_ids("staging")[:app],
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+    UI.success("Staging build #{result[:build_number]} uploaded to TestFlight internal")
+  end
+
+  desc "Production Environment IPA, uploaded to App Store Connect"
+  desc "(spec pipeline stage promote; review submission is finished in"
+  desc "App Store Connect until listing metadata exists). CI-only."
+  lane :build_production_appstore do
+    result = aity_build_signed_ipa(expected_env: "production")
+
+    deliver(
+      api_key: result[:api_key],
+      app_identifier: aity_ids("production")[:app],
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: false,
+      precheck_include_in_app_purchases: false,
+      force: true
+    )
+    UI.success("Production build #{result[:build_number]} uploaded to App Store Connect - submit for review there")
+  end
+end

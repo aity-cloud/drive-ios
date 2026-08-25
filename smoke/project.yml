@@ -1,0 +1,34 @@
+# xcodegen spec for the standalone login-screen smoke runner.
+#
+# The Pin has no UI-test target (ownCloudScreenshotsTests survives only as
+# a stale scheme), and adding one to upstream's project.pbxproj would be a
+# Patch. So the smoke is a separate, generated Xcode project that launches
+# the ALREADY INSTALLED Aity Drive simulator app by bundle identifier
+# (XCUIApplication(bundleIdentifier:)) - no dependency on the upstream
+# tree at all. `xcodegen generate` is run by the build_simulator_smoke
+# lane on the Mac runner (xcodegen comes from the Brewfile); the generated
+# .xcodeproj is gitignored.
+name: AityDriveSmoke
+options:
+  bundleIdPrefix: tech.aity.drive.smoke
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  AityDriveSmokeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AityDriveSmokeUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: tech.aity.drive.smoke.uitests
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+schemes:
+  AityDriveSmokeUITests:
+    build:
+      targets:
+        AityDriveSmokeUITests: [test]
+    test:
+      targets:
+        - AityDriveSmokeUITests

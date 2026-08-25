@@ -1,0 +1,131 @@
+# Aity Drive iOS Factory pipeline (meta/specs/aity-drive-v1.md, ADR 0001).
+#
+# materialize -> build -> smoke -> publish-staging -> promote -> mirror
+#
+# The Linux jobs (lint) validate everything a Linux runner can validate:
+# scripts, plists, this file, and a full materialise of BOTH Environments
+# against the real upstream clone (patch application + overlay path drift).
+# Every job that needs Xcode is tagged `macos` and stays `when: manual`
+# until the macos runner exists (meta/docs/runbooks/mac-runner.md); the
+# iOS compile itself happens inside the smoke/publish/promote lanes (gym
+# builds as part of upload), so the `build` stage carries no job of its
+# own in this Factory.
+#
+# Secrets (protected CI variables, never in the repo): ASC_KEY_ID,
+# ASC_ISSUER_ID, ASC_KEY_P8 (file), MATCH_PASSWORD, MATCH_GIT_PRIVATE_KEY
+# (file), AITY_TEAM_ID, GITHUB_MIRROR_KEY (file) - see
+# meta/docs/runbooks/publisher-accounts.md. The lanes fail fast with a
+# clear message when any of them is absent.
+
+stages: [materialize, build, smoke, publish-staging, promote, mirror]
+
+variables:
+  # The Pin (ADR 0001). Renovate watches the upstream tag; the ios-sdk
+  # submodule has no pin of its own - scripts/materialize.sh checks it out
+  # at the commit this app tag records, so bumping UPSTREAM_TAG moves both.
+  # renovate: datasource=github-tags depName=owncloud/ios-app
+  UPSTREAM_TAG: "v12.7.0"
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# ---------------------------------------------------------------------------
+# Linux validation - runs on every main push and tag.
+# ---------------------------------------------------------------------------
+
+lint:
+  stage: materialize
+  image: registry.aity.tech/catalog/library/alpine:3.22
+  tags: [docker, shared]
+  interruptible: true
+  script:
+    - apk add --no-cache bash git python3 ruby shellcheck yamllint >/dev/null
+    - shellcheck scripts/*.sh
+    - python3 -m py_compile scripts/*.py
+    - python3 scripts/check-plists.py
+    - |
+      yamllint -d "{extends: relaxed, rules: {line-length: {max: 160}}}" \
+        .gitlab-ci.yml smoke/project.yml
+    - |
+      for rb in Gemfile fastlane/Appfile fastlane/Matchfile fastlane/Fastfile; do
+        ruby -c "$rb"
+      done
+    # Full materialise of both Environments against the real Pin clone:
+    # proves the tag exists, the ios-sdk submodule resolves, every patch
+    # applies, and every overlay/recipe path still matches the upstream
+    # tree (--check). The staging run reuses the production clone.
+    - bash scripts/materialize.sh production --check
+    - bash scripts/materialize.sh staging --check
+
+# ---------------------------------------------------------------------------
+# Xcode jobs - manual until the macos runner exists (runbooks/mac-runner.md).
+# Each one re-materialises its Environment on the Mac; nothing is passed
+# between jobs. Manual jobs are allow_failure by default, so the mirror
+# stage still runs on plain main pushes.
+# ---------------------------------------------------------------------------
+
+.macos:
+  tags: [macos]
+  when: manual # until the macos runner exists (runbooks/mac-runner.md)
+  timeout: 2h
+  variables:
+    # Xcode per the Pin's .xcode-version; selected via DEVELOPER_DIR by
+    # `xcodes` on the runner, enforced by ensure_xcode_version in the lane.
+    LC_ALL: en_US.UTF-8
+    LANG: en_US.UTF-8
+
+smoke:simulator:
+  extends: .macos
+  stage: smoke
+  script:
+    - bash scripts/materialize.sh staging
+    - brew bundle --file Brewfile
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios build_simulator_smoke
+  artifacts:
+    when: always
+    expire_in: 2 weeks
+    paths:
+      - build/upstream/fastlane/xcodebuild-*.log
+
+publish:staging-testflight:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh staging
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios build_staging_testflight
+  artifacts:
+    expire_in: 3 months
+    paths:
+      - build/upstream/*.ipa
+
+promote:production-appstore:
+  extends: .macos
+  stage: promote
+  rules:
+    # Promote is the single manual act that moves a release to the public
+    # listing (CONTEXT.md); it exists on tag pipelines only.
+    - if: $CI_COMMIT_TAG
+      when: manual
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios build_production_appstore
+  artifacts:
+    paths:
+      - build/upstream/*.ipa
+
+# ---------------------------------------------------------------------------
+# Public Mirror (ADR 0004) - CI is the only writer.
+# ---------------------------------------------------------------------------
+
+include:
+  - project: aity-cloud/drive/meta
+    ref: main
+    file: ci/mirror.yml

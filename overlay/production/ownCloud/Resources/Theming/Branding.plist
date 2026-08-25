@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Aity Drive Branding - PRODUCTION Environment (drive.aity.tech).
+	  Replaces the empty ownCloud/Resources/Theming/Branding.plist of the
+	  Pin. Key names per doc/configuration.adoc at the Pin; keys with
+	  "$[0]" use the SDK's flat syntax (NSDictionary+OCExpand.m). The
+	  build.* keys are consumed by the fastlane lanes at build time, the
+	  rest by the app at run time. Keep overlay/staging in sync: only the
+	  keys listed in scripts/check-plists.py may differ.
+	-->
+
+	<!-- Identity. organization-name is what flips the app into branded
+	     mode (Branding.isBranded == organizationName != nil). -->
+	<key>branding.app-name</key>
+	<string>Aity Drive</string>
+	<key>branding.organization-name</key>
+	<string>Aity</string>
+
+	<!-- Single locked profile: server preset, URL field hidden. -->
+	<key>branding.profile-url</key>
+	<string>https://drive.aity.tech</string>
+	<key>branding.profile-allow-url-configuration</key>
+	<false/>
+	<key>branding.profile-bookmark-name</key>
+	<string>Aity Drive</string>
+
+	<!-- OIDC only, against the Environment's Keycloak. Public client,
+	     PKCE, no secret. Dynamic client registration off: Keycloak
+	     advertises a registration_endpoint but requires an initial
+	     access token, so the attempt could only ever fail. -->
+	<key>connection.allowed-authentication-methods</key>
+	<array>
+		<string>com.owncloud.openid-connect</string>
+	</array>
+	<key>authentication-oauth2.oa2-client-id</key>
+	<string>drive-ios</string>
+	<key>authentication-oauth2.oa2-client-secret</key>
+	<string></string>
+	<key>authentication-oauth2.oidc-redirect-uri</key>
+	<string>aitydrive://ios.aity.tech</string>
+	<key>authentication-oauth2.oa2-redirect-uri</key>
+	<string>aitydrive://ios.aity.tech</string>
+	<key>authentication-oauth2.oidc-register-client</key>
+	<false/>
+
+	<!-- User-facing extras off (spec decision 15). Release notes and the
+	     App Store review prompt are already off for branded builds;
+	     feedback is disabled by the literal "null" per configuration.adoc;
+	     an empty documentation URL hides the Documentation row. -->
+	<key>branding.send-feedback-address</key>
+	<string>null</string>
+	<key>branding.enable-review-prompt</key>
+	<false/>
+	<key>branding.url-documentation</key>
+	<string></string>
+
+	<!-- Links (spec decision 15). -->
+	<key>branding.url-help</key>
+	<string>https://aity.ro/contacteaza-ne/</string>
+	<key>branding.url-privacy</key>
+	<string>https://aity.tech/documents/privacy/</string>
+	<key>branding.url-terms-of-use</key>
+	<string>https://aity.tech/documents/terms/</string>
+
+	<!-- ADR 0003: GPLv3 notices stay (nothing in this Overlay removes
+	     them - the Acknowledgements screen and every source header ship
+	     as upstream wrote them) and the app links its complete
+	     corresponding source. -->
+	<key>branding.sidebar-links-title</key>
+	<string>Aity Drive</string>
+	<key>branding.sidebar-links$[0].title</key>
+	<string>Source code (GPLv3)</string>
+	<key>branding.sidebar-links$[0].url</key>
+	<string>https://github.com/aity-cloud/drive-ios</string>
+	<key>branding.sidebar-links$[0].symbol</key>
+	<string>link</string>
+
+	<!-- Brand palette (meta/brand: red-600 primary, red-800 active).
+	     Only the keys generateThemeStyle() reads at the Pin
+	     (ownCloudAppShared/Branding/Branding+App.swift); the Colors.*
+	     keys seen in upstream's ownBrander template are not consumed at
+	     v12.7.0 - cssRecords is the tuning channel if Mac-day review
+	     needs it. -->
+	<key>branding.theme-definitions$[0].Identifier</key>
+	<string>tech.aity.drive.theme</string>
+	<key>branding.theme-definitions$[0].Name</key>
+	<string>Aity</string>
+	<key>branding.theme-definitions$[0].ThemeStyle</key>
+	<string>light</string>
+	<key>branding.theme-definitions$[0].lightBrandColor</key>
+	<string>#b80818</string>
+	<key>branding.theme-definitions$[0].darkBrandColor</key>
+	<string>#780611</string>
+
+	<!-- Build-time keys, consumed by the fastlane lanes exactly as
+	     upstream's build_ipa_in_house consumes them. -->
+	<key>build.flags</key>
+	<string>DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP</string>
+	<key>build.custom-app-scheme</key>
+	<string>aitydrive-app</string>
+	<key>build.custom-auth-scheme</key>
+	<string>aitydrive</string>
+	<key>build.app-group-identifier</key>
+	<string>group.tech.aity.drive</string>
+</dict>
+</plist>

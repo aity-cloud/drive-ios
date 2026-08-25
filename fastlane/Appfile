@@ -1,0 +1,4 @@
+# Aity Drive iOS Factory Appfile (replaces the Pin's OWNCLOUD_* env
+# mapping when materialised). The app identifier is per-Environment and is
+# passed explicitly by every lane; only the team is global.
+team_id(ENV["AITY_TEAM_ID"]) if ENV["AITY_TEAM_ID"]

@@ -1,0 +1,17 @@
+# The materialised upstream tree (scripts/materialize.sh). Never committed:
+# the Factory holds only the Pin, the Overlay, the Patches and CI (ADR 0001).
+/build/
+
+# fastlane run artifacts (when lanes are run from a checkout by hand)
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
+
+# smoke project generated output (xcodegen generates the .xcodeproj on the Mac)
+smoke/*.xcodeproj
+smoke/DerivedData/
+
+# local tooling
+.bundle/
+vendor/
+.DS_Store

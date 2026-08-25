@@ -1,0 +1,10 @@
+# fastlane match against the private certificates repo of the drive
+# subgroup (spec decision 7). Authentication in CI is the deploy key in
+# the protected file variable MATCH_GIT_PRIVATE_KEY (match reads it from
+# the environment); the encryption passphrase is MATCH_PASSWORD.
+# The store is bootstrapped ONCE by hand from a Mac
+# (publisher-accounts.md step 2.6); CI is readonly.
+git_url(ENV["MATCH_GIT_URL"] || "git@gitlab.com:aity-cloud/drive/certificates.git")
+storage_mode("git")
+type("appstore")
+readonly(true)
