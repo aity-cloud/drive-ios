@@ -597,6 +597,51 @@ platform :ios do
     end
   end
 
+  desc "Read-only: what TestFlight actually has - builds, their processing"
+  desc "state, and which tester groups exist. Answers 'why is it not on my"
+  desc "phone' without guessing."
+  lane :aity_check_testflight do
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8])
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      filepath: File.absolute_path(ENV.fetch("ASC_KEY_P8"))
+    )
+
+    AITY_IDENTITY.each_key do |env|
+      identifier = aity_ids(env)[:app]
+      app = Spaceship::ConnectAPI::App.find(identifier)
+      if app.nil?
+        UI.error("#{identifier}: no App Store Connect record")
+        next
+      end
+      UI.header("#{identifier} (#{app.name})")
+
+      builds = app.get_builds(includes: "preReleaseVersion", limit: 5)
+      if builds.empty?
+        UI.important("  no builds visible at all")
+      end
+      builds.each do |build|
+        UI.message("  build #{build.version} (#{build.pre_release_version&.version}) " \
+                   "processing=#{build.processing_state} expired=#{build.expired} " \
+                   "uses_non_exempt_encryption=#{build.uses_non_exempt_encryption.inspect}")
+      end
+
+      groups = app.get_beta_groups
+      if groups.empty?
+        UI.important("  NO tester groups - nothing can reach a phone until one exists")
+      end
+      groups.each do |group|
+        testers = begin
+          group.get_beta_testers.length
+        rescue StandardError
+          "?"
+        end
+        UI.message("  group '#{group.name}' internal=#{group.is_internal_group} testers=#{testers}")
+      end
+    end
+  end
+
   desc "Read-only: ask Apple which App IDs actually carry an App Group, and"
   desc "try to attach the missing ones. Prints a per-id verdict."
   lane :aity_check_app_groups do

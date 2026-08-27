@@ -128,6 +128,16 @@ bootstrap:apple:
     paths:
       - apple-team-id.txt
 
+# Read-only diagnostic: what TestFlight has and who can see it.
+check:testflight:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_check_testflight
+
 # Read-only diagnostic: which App IDs actually carry an App Group.
 check:app-groups:
   extends: .macos
