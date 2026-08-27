@@ -100,6 +100,13 @@ typecheck:smoke:
 .macos:
   tags: [macos]
   when: manual
+  # NOT interruptible. The default block marks everything interruptible so a
+  # new push supersedes a running pipeline, which is right for the Linux jobs
+  # and wrong for these: a manual Xcode job is a deliberate act on Raul's
+  # laptop, and having an unrelated push to main cancel one mid-run wastes
+  # the scarcest resource this Factory has (2026-08-27, a five-run flakiness
+  # measurement lost at run 2).
+  interruptible: false
   # No `needs` on the Linux stage: these jobs re-materialise the whole tree
   # on the Mac and consume nothing from lint, so waiting for it only couples
   # them to a runner they do not use. That coupling cost a full verification
