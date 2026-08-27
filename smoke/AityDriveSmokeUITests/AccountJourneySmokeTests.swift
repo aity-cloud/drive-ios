@@ -411,33 +411,45 @@ final class AccountJourneySmokeTests: XCTestCase {
 	                         openingSpaceNamed spaceName: String) -> Bool {
 		let deadline = Date().addingTimeInterval(timeout)
 		var lastTrace = Date.distantPast
-		var lastTap = Date.distantPast
+		var connectedAccount = false
+		var openedSpace = false
 		while Date() < deadline {
 			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
 
 			// On a phone the split view is collapsed, so after login the app
 			// shows the account SIDEBAR and the file list is one push away.
 			//
-			// The row to tap is the one the app labels "Personal", and ONLY
-			// that one. The space's server name ("Drive Contract" - on oCIS
-			// the personal space is named after the user) belongs to the
-			// ACCOUNT HEADER, whose cell also carries an "eject" button that
-			// disconnects the account; tapping it is what ended two earlier
-			// runs with the app no longer running. `spaceName` is kept for the
-			// failure message only.
-			if Date().timeIntervalSince(lastTap) > 15 {
-				let candidates = [app.staticTexts["Personal"].firstMatch,
-				                  app.buttons["Personal"].firstMatch,
-				                  app.cells.staticTexts["Personal"].firstMatch]
-				if let target = candidates.first(where: { $0.exists && $0.isHittable }) {
-					trace("opening the personal space from the sidebar")
-					target.tap()
-					lastTap = Date()
-				} else if candidates.contains(where: { $0.exists }) {
-					// Present but below the fold: the sidebar scrolls.
-					trace("'Personal' is in the sidebar but not hittable - scrolling")
-					app.swipeUp()
-					lastTap = Date()
+			// Getting from "signed in" to "looking at my files" is two taps on
+			// a phone, and the order matters:
+			//
+			//  1. the ACCOUNT ROW, which connects the account and expands it -
+			//     until then the sidebar is just "AITY DRIVE", the account and
+			//     Settings, with no spaces under it. Its label carries the
+			//     space's SERVER name ("Drive Contract": on oCIS the personal
+			//     space is named after the user), which is why that name is
+			//     useless for finding the space itself.
+			//  2. the row the app labels "Personal", which pushes the file
+			//     list.
+			//
+			// Each is tapped ONCE. The account row also carries an "eject"
+			// button that disconnects the account, and re-tapping the row
+			// every few seconds is what ended two earlier runs with the app no
+			// longer running.
+			let personal = [app.staticTexts["Personal"].firstMatch,
+			                app.buttons["Personal"].firstMatch]
+			if !openedSpace, let target = personal.first(where: { $0.exists && $0.isHittable }) {
+				trace("opening the personal space")
+				target.tap()
+				openedSpace = true
+			} else if !openedSpace, personal.contains(where: { $0.exists }) {
+				trace("'Personal' is in the sidebar but not hittable - scrolling")
+				app.swipeUp()
+			} else if !connectedAccount, !personal.contains(where: { $0.exists }) {
+				let accountRow = cell(app, named: spaceName)
+				if accountRow.exists && accountRow.isHittable {
+					trace("connecting the account so the sidebar expands")
+					accountRow.tap()
+					connectedAccount = true
 				}
 			}
 			// Without this, a run that never finds the file spends three
