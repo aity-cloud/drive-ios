@@ -637,15 +637,18 @@ platform :ios do
         # Spaceship has no BetaGroup.create; group creation lives on the
         # client. Signatures have drifted between versions, so try the
         # internal-group form first and fall back to the plain one.
-        group = begin
-          Spaceship::ConnectAPI.create_beta_group(
-            app_id: app.id, group_name: group_name, is_internal_group: true
-          )
-        rescue ArgumentError, NoMethodError => e
-          UI.message("  create_beta_group(is_internal_group:) unavailable (#{e.class}); trying the plain form")
-          Spaceship::ConnectAPI.create_beta_group(app_id: app.id, group_name: group_name)
-        end
-        group = group.first if group.is_a?(Array)
+        # Hand-built request: spaceship's create_beta_group always sends
+        # publicLinkLimitEnabled, and Apple refuses that attribute on an
+        # internal group ("Public link limit cannot be applied to internal
+        # group"). Only name + isInternalGroup + the app relationship.
+        response = Spaceship::ConnectAPI.client.post("betaGroups", {
+          data: {
+            type: "betaGroups",
+            attributes: { name: group_name, isInternalGroup: true },
+            relationships: { app: { data: { type: "apps", id: app.id } } }
+          }
+        })
+        group = Spaceship::ConnectAPI::BetaGroup.new(response.to_models.first.to_hash, nil) rescue response.to_models.first
         UI.success("#{identifier}: created internal group '#{group_name}'")
       else
         UI.message("#{identifier}: internal group '#{group_name}' exists")
