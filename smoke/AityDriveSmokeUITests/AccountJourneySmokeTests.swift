@@ -334,10 +334,13 @@ final class AccountJourneySmokeTests: XCTestCase {
 			}
 			// Labels drift with i18n and with loading states ("Continue" becomes
 			// a spinner). Fall back to any submit-looking button in the page.
-			let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
-			                            "sign in", "continue")
-			let candidate = host.webViews.buttons.matching(predicate).firstMatch
-			if candidate.exists && candidate.isHittable { candidate.tap(); return true }
+			let candidate = host.webViews.buttons.allElementsBoundByIndex.first { button in
+				let label = button.label.lowercased()
+				return (label.contains("sign in") || label.contains("continue")
+				        || label.contains("autentificare") || label.contains("continu"))
+					&& button.isHittable
+			}
+			if let candidate { candidate.tap(); return true }
 		}
 		return false
 	}
@@ -346,6 +349,24 @@ final class AccountJourneySmokeTests: XCTestCase {
 		browserHosts.map { host in
 			"--- \(host.description.prefix(60)) ---\n\(hierarchy(host))"
 		}.joined(separator: "\n\n")
+	}
+
+	/// Empty a text field. The clear button is the reliable route when the
+	/// field has one; select-all is the fallback.
+	private func clear(_ field: XCUIElement, in app: XCUIApplication) {
+		let clearButton = field.buttons["Clear text"]
+		if clearButton.exists && clearButton.isHittable {
+			clearButton.tap()
+			return
+		}
+		field.press(forDuration: 1.2)
+		let selectAll = app.menuItems["Select All"]
+		if selectAll.waitForExistence(timeout: 3) {
+			selectAll.tap()
+			return
+		}
+		let existing = (field.value as? String) ?? ""
+		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
 	}
 
 	// MARK: - Small waiting helpers

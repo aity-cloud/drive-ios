@@ -176,6 +176,17 @@ Traps this cost, all confirmed against the real staging realm:
   based, fully deterministic login would need a Patch wiring it into the app's
   URL handling. Worth remembering if the sheet ever proves too flaky.
 
+Before pushing anything in `smoke/`, run
+**`scripts/check-smoke-swift.sh`**. `swiftc -parse` only parses - it never
+resolves a name - so deleting a helper that is still called compiles clean
+locally and fails on the Mac. That happened on 2026-08-27 and cost a round
+trip on Raul's laptop for a missing `clear()`. The script type-checks the
+smoke sources against hand-written XCTest/XCUITest stubs
+(`smoke/typecheck/XCTestStubs.swift`) on Linux, and the `typecheck:smoke` CI
+job runs the same command. Green there means "worth sending to the Mac", not
+"this will pass": the stubs are hand-written and can drift, so when Xcode
+disagrees about a signature, fix the stub too.
+
 Operational notes for the lane:
 
 - **DerivedData moved out of the materialised tree.** `materialize.sh` runs

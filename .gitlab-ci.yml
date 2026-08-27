@@ -71,6 +71,25 @@ lint:
     - bash scripts/materialize.sh production --check
     - bash scripts/materialize.sh staging --check
 
+# The XCUITest sources, type-checked without Xcode. `ruby -c`-grade parsing is
+# not enough: `swiftc -parse` never resolves a name, so a call to a helper that
+# was deleted compiles clean locally and fails on the Mac - which is Raul's
+# laptop, one job at a time. This catches that class before anyone triggers an
+# Xcode job. It is a NAME and ARITY check against hand-written stubs, not an
+# API-compatibility check (see smoke/typecheck/XCTestStubs.swift).
+typecheck:smoke:
+  stage: materialize
+  image: swift:6.1
+  tags: [docker, shared]
+  interruptible: true
+  # Not in the curated registry.aity.tech mirror, so this comes from Docker Hub
+  # and inherits that path's flakiness (drive/desktop/MAINTAINING.md).
+  retry:
+    max: 2
+    when: [runner_system_failure, api_failure, unknown_failure]
+  script:
+    - swiftc -typecheck smoke/typecheck/XCTestStubs.swift smoke/AityDriveSmokeUITests/*.swift
+
 # ---------------------------------------------------------------------------
 # Xcode jobs - manual until the macos runner exists (runbooks/mac-runner.md).
 # Each one re-materialises its Environment on the Mac; nothing is passed

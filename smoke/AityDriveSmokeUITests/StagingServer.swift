@@ -19,6 +19,11 @@
 //
 
 import Foundation
+// Linux only, and only for scripts/check-smoke-swift.sh: swift-corelibs
+// splits URLSession out of Foundation. No effect on the iOS build.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 struct StagingServer {
 	let baseURL: URL
@@ -42,17 +47,25 @@ struct StagingServer {
 
 	// MARK: - Plumbing
 
+	/// The semaphore already serialises the write and the read, but the
+	/// compiler cannot see that: a captured `var` mutated inside the completion
+	/// handler is an error under the Swift 6 language mode. A box keeps it
+	/// honest and keeps the warning out of the transcript.
+	private final class Box<Value>: @unchecked Sendable {
+		var value: Value?
+	}
+
 	private func send(_ request: URLRequest) throws -> (Int, Data) {
-		var result: Result<(Int, Data), Error>?
+		let box = Box<Result<(Int, Data), Error>>()
 		let done = DispatchSemaphore(value: 0)
 
 		URLSession.shared.dataTask(with: request) { data, response, error in
 			if let error {
-				result = .failure(ServerError.transport(error.localizedDescription))
+				box.value = .failure(ServerError.transport(error.localizedDescription))
 			} else if let http = response as? HTTPURLResponse {
-				result = .success((http.statusCode, data ?? Data()))
+				box.value = .success((http.statusCode, data ?? Data()))
 			} else {
-				result = .failure(ServerError.malformed("no HTTP response"))
+				box.value = .failure(ServerError.malformed("no HTTP response"))
 			}
 			done.signal()
 		}.resume()
@@ -60,7 +73,10 @@ struct StagingServer {
 		guard done.wait(timeout: .now() + 60) == .success else {
 			throw ServerError.transport("timed out after 60s: \(request.url?.absoluteString ?? "?")")
 		}
-		return try result!.get()
+		guard let result = box.value else {
+			throw ServerError.malformed("the request completed without a result")
+		}
+		return try result.get()
 	}
 
 	private func form(_ url: URL, _ fields: [String: String]) throws -> (Int, Data) {
