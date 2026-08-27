@@ -100,6 +100,25 @@ smoke:simulator:
     paths:
       - build/upstream/fastlane/xcodebuild-*.log
 
+# ONE-TIME, and deliberately not part of any release flow: registers the
+# App IDs and App Store Connect records for both Environments and writes
+# the certificate + profiles into the match store. Idempotent - re-running
+# creates only what is missing. Prints the Apple Team ID, which then has to
+# be set as the protected group variable AITY_TEAM_ID.
+bootstrap:apple:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_bootstrap_apple
+  artifacts:
+    when: always
+    expire_in: 1 month
+    paths:
+      - apple-team-id.txt
+
 publish:staging-testflight:
   extends: .macos
   stage: publish-staging
@@ -108,6 +127,24 @@ publish:staging-testflight:
     - cd build/upstream
     - bundle install
     - bundle exec fastlane ios build_staging_testflight
+  artifacts:
+    expire_in: 3 months
+    paths:
+      - build/upstream/*.ipa
+
+# The PRE-PROD channel: the production binary (drive.aity.tech) on
+# TestFlight for external testers, months before it is on the App Store.
+# Uploads only by default; set AITY_TF_EXTERNAL=true (plus ASC_DEMO_USER /
+# ASC_DEMO_PASSWORD) as job variables to also send it to the tester group,
+# which puts the first build through Beta App Review.
+publish:preprod-testflight:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios build_preprod_testflight
   artifacts:
     expire_in: 3 months
     paths:
