@@ -325,13 +325,15 @@ platform :ios do
     }.each do |target, (identifier, profile)|
       params = {
         path: "ownCloud.xcodeproj",
-        use_automatic_signing: false,
+        use_automatic_signing: options[:automatic],
         team_id: team_id,
-        code_sign_identity: identity,
         bundle_identifier: identifier,
         targets: [target]
       }
-      params[:profile_name] = profile if profile
+      unless options[:automatic]
+        params[:code_sign_identity] = identity
+        params[:profile_name] = profile if profile
+      end
       automatic_code_signing(**params)
     end
   end
@@ -366,18 +368,32 @@ platform :ios do
     ids = aity_ids(env)
     signed_ids = [ids[:app], ids[:fileprovider], ids[:fileprovider_ui], ids[:intents], ids[:share], ids[:action]]
 
-    # Profiles from the private certificates repo (readonly: the store is
-    # bootstrapped once, by hand, per publisher-accounts.md step 2.6).
-    match(
-      type: "appstore",
-      app_identifier: signed_ids,
-      team_id: team_id,
-      readonly: true,
-      api_key: api_key
-    )
+    # SIGNING MODE. Default is Xcode-managed ("automatic"), because Apple
+    # does NOT expose App Groups in the App Store Connect API: with match's
+    # manual profiles, every extension's App ID has to be associated with
+    # its group BY HAND in the portal, and a profile minted before that
+    # shows up as "doesn't support the group.* App Group" (2026-08-27).
+    # Xcode, given the same API key and -allowProvisioningUpdates, registers
+    # what is missing - app groups included - and mints its own profiles.
+    # AITY_SIGNING=match restores the reproducible-profile path once the
+    # portal state is complete.
+    automatic = ENV["AITY_SIGNING"] != "match"
+
+    if automatic
+      UI.message("Signing: Xcode-managed (-allowProvisioningUpdates)")
+    else
+      UI.message("Signing: match profiles from the certificates repo")
+      match(
+        type: "appstore",
+        app_identifier: signed_ids,
+        team_id: team_id,
+        readonly: true,
+        api_key: api_key
+      )
+    end
 
     identity_info = aity_apply_identity(team_id: team_id, build_number: build_number)
-    aity_apply_signing(ids: ids, team_id: team_id, identity: "Apple Distribution")
+    aity_apply_signing(ids: ids, team_id: team_id, identity: "Apple Distribution", automatic: automatic)
 
     profile_map = signed_ids.to_h { |id| [id, "match AppStore #{id}"] }
 
@@ -387,7 +403,8 @@ platform :ios do
       configuration: "Release",
       output_name: "aity-drive-#{env}-#{build_number}.ipa",
       export_method: "app-store",
-      xcargs: "CODE_SIGN_STYLE=Manual APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
+      xcargs: (automatic ? "-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic" : "CODE_SIGN_STYLE=Manual") +
+              " APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
       # gym pipes xcodebuild through a formatter and runs with pipefail, so a
       # MISSING formatter reports as "** ARCHIVE FAILED **" with exit 127 and
       # hides whatever the build actually did - which is exactly what the
@@ -407,10 +424,9 @@ platform :ios do
       # ...and the unformatted transcript lands in the workspace, shipped as
       # a job artifact, so the next failure is diagnosable without a re-run.
       buildlog_path: "gym-logs",
-      export_options: {
-        method: "app-store",
-        provisioningProfiles: profile_map
-      }
+      export_options: automatic ?
+        { method: "app-store", signingStyle: "automatic", teamID: team_id } :
+        { method: "app-store", provisioningProfiles: profile_map }
     )
 
     { api_key: api_key, env: env, build_number: build_number }
