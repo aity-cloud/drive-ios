@@ -610,10 +610,22 @@ platform :ios do
 
     group_name = ENV["AITY_TF_INTERNAL_GROUP"] || "Aity Internal"
 
-    # Internal testers must be App Store Connect users; ask Apple who those
-    # are rather than hardcoding an address.
-    users = Spaceship::ConnectAPI::User.all
-    UI.message("App Store Connect users: #{users.map(&:email).join(', ')}")
+    # Internal testers must be App Store Connect users. Enumerating them
+    # needs an Admin key - ours is App Manager, and the call blows up - so
+    # the address comes from AITY_TF_TESTER_EMAIL when it is set, and we
+    # simply skip tester assignment when it is not. The GROUP still gets
+    # created either way, which is the part that cannot be done later
+    # without a build sitting in limbo.
+    users = begin
+      found = Spaceship::ConnectAPI::User.all
+      UI.message("App Store Connect users: #{found.map(&:email).join(', ')}")
+      found
+    rescue StandardError => e
+      UI.important("Cannot list App Store Connect users (#{e.class}); using AITY_TF_TESTER_EMAIL instead")
+      []
+    end
+
+    extra = ENV["AITY_TF_TESTER_EMAIL"].to_s.strip
 
     AITY_IDENTITY.each_key do |env|
       identifier = aity_ids(env)[:app]
@@ -630,16 +642,20 @@ platform :ios do
         UI.message("#{identifier}: internal group '#{group_name}' exists")
       end
 
-      users.each do |user|
+      emails = users.map(&:email)
+      emails << extra unless extra.empty? || emails.include?(extra)
+      UI.important("  no tester email known - add yourself under TestFlight > #{group_name} > Testers, or re-run with AITY_TF_TESTER_EMAIL") if emails.empty?
+
+      emails.each do |email|
         Spaceship::ConnectAPI::BetaTester.create(
           beta_group_id: group.id,
-          email: user.email,
-          first_name: user.first_name,
-          last_name: user.last_name
+          email: email,
+          first_name: ENV["AITY_TF_TESTER_FIRST_NAME"] || "Aity",
+          last_name: ENV["AITY_TF_TESTER_LAST_NAME"] || "Tester"
         )
-        UI.success("  + #{user.email}")
+        UI.success("  + #{email}")
       rescue StandardError => e
-        UI.message("  #{user.email}: #{e.message.to_s.split("\n").first}")
+        UI.message("  #{email}: #{e.message.to_s.split("\n").first}")
       end
 
       build = app.get_builds(limit: 5).find { |candidate| candidate.processing_state == "VALID" }
