@@ -61,6 +61,9 @@ lint:
       for rb in Gemfile fastlane/Appfile fastlane/Matchfile fastlane/Fastfile; do
         ruby -c "$rb"
       done
+    # `ruby -c` cannot see it: a comment after a backslash line-continuation
+    # silently truncates the string, which faked a green smoke on 2026-08-27.
+    - ruby scripts/check-fastfile.rb
     # Full materialise of both Environments against the real Pin clone:
     # proves the tag exists, the ios-sdk submodule resolves, every patch
     # applies, and every overlay/recipe path still matches the upstream

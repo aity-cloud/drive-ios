@@ -560,26 +560,46 @@ platform :ios do
       sh "xcrun simctl uninstall '#{sim_name}' '#{ids[:app]}' || true"
       sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
 
-      # Same log discipline as the build above: file, not console.
-      command = "set -o pipefail; " \
-                "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}' " \
-                "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}' " \
-                "TEST_RUNNER_AITY_DRIVE_URL='#{drive_url}' " \
-                "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}' " \
-                "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}' " \
-                "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}' " \
-                # NOT -quiet: -quiet suppresses the assertion messages, so a
-                # failed run leaves only "** TEST FAILED **" in the log and the
-                # detail exists solely inside the .xcresult - which needs a Mac
-                # to read. That cost a full round trip on 2026-08-27. The full
-                # transcript still goes to a file, never to the console.
-                "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
-                "-scheme AityDriveSmokeUITests " \
-                "-resultBundlePath '#{result_bundle}' " \
-                "#{only.empty? ? '' : "-only-testing:#{only} "}" \
-                "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
-                "> #{log} 2>&1"
+      # Same log discipline as the build above: file, not console. NOT
+      # -quiet either: -quiet suppresses the assertion messages, so a failed
+      # run leaves nothing but "** TEST FAILED **" and the detail exists only
+      # inside the .xcresult, which needs a Mac to read.
+      #
+      # Built as an ARRAY, not a backslash-continued string: a `#` comment
+      # inside a `"..." \` continuation silently ENDS the expression in Ruby,
+      # and the truncated command was `set -o pipefail; VAR=... VAR=...` - an
+      # assignment-only line that exits 0 without running anything. That
+      # reported a green smoke that had never run a test (2026-08-27). Hence
+      # also the two guards below.
+      command = [
+        "set -o pipefail;",
+        "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}'",
+        "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}'",
+        "TEST_RUNNER_AITY_DRIVE_URL='#{drive_url}'",
+        "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}'",
+        "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}'",
+        "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}'",
+        "xcodebuild test",
+        "-project '#{smoke_dir}/AityDriveSmoke.xcodeproj'",
+        "-scheme AityDriveSmokeUITests",
+        "-resultBundlePath '#{result_bundle}'",
+        (only.empty? ? nil : "-only-testing:#{only}"),
+        "-destination 'platform=iOS Simulator,name=#{sim_name}'",
+        "> #{log} 2>&1"
+      ].compact.join(" ")
       passed = system(command)
+
+      # A run that produced no transcript and no result bundle did not happen,
+      # whatever its exit status was. Never report that as green.
+      log_path = File.expand_path(log)
+      unless File.exist?(log_path) && File.exist?(result_bundle)
+        UI.user_error!(
+          "xcodebuild test exited #{passed ? 0 : 'non-zero'} but produced " \
+          "#{File.exist?(log_path) ? '' : 'no log'}#{File.exist?(result_bundle) ? '' : ' no result bundle'} - " \
+          "the test did not run. Command was:\n#{command}"
+        )
+      end
+
       results << passed
       unless passed
         UI.error("--- smoke run #{run} failed, assertions ---")
