@@ -236,6 +236,14 @@ final class AccountJourneySmokeTests: XCTestCase {
 		return nil
 	}
 
+	private func webPasswordField() -> XCUIElement? {
+		for host in browserHosts {
+			let field = host.webViews.secureTextFields.firstMatch
+			if field.exists { return field }
+		}
+		return nil
+	}
+
 	private func signIn(_ app: XCUIApplication, username: String, password: String, activity: XCTActivity) throws {
 		// The realm's browser flow is IDENTITY-FIRST: page 1 asks for the email
 		// and submits with "Continue", page 2 asks for the password and submits
@@ -246,61 +254,98 @@ final class AccountJourneySmokeTests: XCTestCase {
 			        "SafariViewService:\n\(hierarchy(XCUIApplication(bundleIdentifier: "com.apple.SafariViewService")))")
 			return
 		}
+		trace("login page reached, typing the contract username")
 		attachBrowser(named: "login-step-1-username")
 
 		userField.tap()
 		userField.typeText(username)
 		activity.add(XCTAttachment(string: "typed the contract username"))
-		tapWebButton(["Continue", "Continuă", "Sign in"])
 
-		guard let passwordField = waitFor({ () -> XCUIElement? in
-			for host in self.browserHosts {
-				let field = host.webViews.secureTextFields.firstMatch
-				if field.exists { return field }
-			}
-			return nil
-		}, timeout: 60) else {
+		let reachedPasswordStep = submitWebForm(
+			labels: ["Continue", "Continuă", "Sign in"],
+			until: { self.webPasswordField() != nil },
+			timeout: 60
+		)
+		guard reachedPasswordStep, let passwordField = webPasswordField() else {
 			attachBrowser(named: "login-step-2-missing")
-			XCTFail("the password step never appeared after submitting the email")
+			XCTFail("the password step never appeared after submitting the email.\n\n" +
+			        browserHierarchies())
 			return
 		}
+		trace("password page reached")
 		attachBrowser(named: "login-step-2-password")
 
 		passwordField.tap()
 		passwordField.typeText(password)
-		tapWebButton(["Sign in", "Autentificare", "Continue"])
+
+		let left = submitWebForm(
+			labels: ["Sign in", "Autentificare", "Continue"],
+			until: { self.webPasswordField() == nil },
+			timeout: 60
+		)
+		if !left {
+			attachBrowser(named: "login-step-2-stuck")
+			XCTFail("the password page never went away after submitting.\n\n" + browserHierarchies())
+		}
 	}
 
-	private func tapWebButton(_ labels: [String]) {
+	/// Submits whatever login page is on screen and waits for `until`.
+	///
+	/// Return first, button second: the submit button of these pages sits below
+	/// the fold on a phone-sized sheet, where XCUITest reports it as not
+	/// hittable and refuses to tap it, while the keyboard's return key submits
+	/// the form the way a person would. The button path stays as the fallback
+	/// (with a swipe, in case the keyboard is not up).
+	private func submitWebForm(labels: [String], until condition: () -> Bool,
+	                           timeout: TimeInterval) -> Bool {
+		let deadline = Date().addingTimeInterval(timeout)
+		var attempt = 0
+		while Date() < deadline {
+			attempt += 1
+			switch attempt {
+			case 1:
+				if let host = browserHosts.first(where: { $0.keyboards.count > 0 }) {
+					trace("submitting with the keyboard return key")
+					host.typeText("\n")
+				}
+			default:
+				if tapWebButton(labels) { trace("submitted by tapping a button") }
+				else if attempt == 2 {
+					browserHosts.first(where: { $0.webViews.firstMatch.exists })?.swipeUp()
+					trace("swiped the login page up to reach the submit button")
+				}
+			}
+
+			let checkUntil = Date().addingTimeInterval(8)
+			while Date() < checkUntil {
+				if condition() { return true }
+				usleep(500_000)
+			}
+		}
+		return condition()
+	}
+
+	@discardableResult
+	private func tapWebButton(_ labels: [String]) -> Bool {
 		for host in browserHosts {
 			for label in labels {
 				let button = host.webViews.buttons[label].firstMatch
-				if button.exists && button.isHittable { button.tap(); return }
+				if button.exists && button.isHittable { button.tap(); return true }
 			}
+			// Labels drift with i18n and with loading states ("Continue" becomes
+			// a spinner). Fall back to any submit-looking button in the page.
+			let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+			                            "sign in", "continue")
+			let candidate = host.webViews.buttons.matching(predicate).firstMatch
+			if candidate.exists && candidate.isHittable { candidate.tap(); return true }
 		}
-		// Fall back to the keyboard's Go/Return, which submits the form.
-		for host in browserHosts where host.keyboards.count > 0 {
-			host.typeText("\n")
-			return
-		}
+		return false
 	}
 
-	/// Empty a text field. The clear button is the reliable route when the
-	/// field has one; select-all is the fallback.
-	private func clear(_ field: XCUIElement, in app: XCUIApplication) {
-		let clearButton = field.buttons["Clear text"]
-		if clearButton.exists && clearButton.isHittable {
-			clearButton.tap()
-			return
-		}
-		field.press(forDuration: 1.2)
-		let selectAll = app.menuItems["Select All"]
-		if selectAll.waitForExistence(timeout: 3) {
-			selectAll.tap()
-			return
-		}
-		let existing = (field.value as? String) ?? ""
-		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
+	private func browserHierarchies() -> String {
+		browserHosts.map { host in
+			"--- \(host.description.prefix(60)) ---\n\(hierarchy(host))"
+		}.joined(separator: "\n\n")
 	}
 
 	// MARK: - Small waiting helpers
@@ -341,6 +386,12 @@ final class AccountJourneySmokeTests: XCTestCase {
 	// A failing UI test that only says "element not found" costs a whole CI
 	// round trip on shared Mac hardware. Every failure message carries the
 	// element tree, and each phase attaches a screenshot.
+
+	/// print() lands in the xcodebuild transcript, which is the only diagnostic
+	/// that can be read without a Mac (attachments live inside the .xcresult).
+	private func trace(_ message: String) {
+		print("[aity-smoke] \(message)")
+	}
 
 	private func hierarchy(_ app: XCUIApplication) -> String {
 		String(app.debugDescription.prefix(20_000))
