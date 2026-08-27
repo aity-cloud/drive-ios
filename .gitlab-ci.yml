@@ -190,13 +190,23 @@ diagnose:crash-reports:
               print(parts[1][:1500]); raise SystemExit
       print("  exception     :", body.get("exception"))
       print("  termination   :", body.get("termination"))
-      print("  isCorpse      :", body.get("isCorpse"), " asi:", str(body.get("asi"))[:300])
+      print("  isCorpse      :", body.get("isCorpse"), " asi:", str(body.get("asi"))[:600])
+      # The assertion message lives in one of these depending on iOS version.
+      for key in ("exceptionReason", "lastExceptionBacktrace", "asiBacktraces", "vmSummary"):
+          value = body.get(key)
+          if value:
+              print("  %-14s: %s" % (key, str(value)[:800]))
+      reason = (body.get("exceptionReason") or {})
+      if isinstance(reason, dict):
+          for k in ("name", "value", "composedMessage", "arguments", "format"):
+              if reason.get(k):
+                  print("    reason.%-12s %s" % (k, str(reason[k])[:400]))
       faulting = body.get("faultingThread")
       for i, th in enumerate(body.get("threads", [])):
           if th.get("triggered") or i == faulting:
               print("  --- triggered thread", i, th.get("name") or "")
               used = body.get("usedImages", [])
-              for fr in th.get("frames", [])[:22]:
+              for fr in th.get("frames", [])[:34]:
                   idx = fr.get("imageIndex", -1)
                   img = used[idx].get("name") if 0 <= idx < len(used) else "?"
                   print("     %-28s %s +%s" % (img, fr.get("symbol") or "", fr.get("imageOffset")))
