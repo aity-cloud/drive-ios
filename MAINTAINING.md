@@ -244,3 +244,43 @@ approximation of the shipped app. Anything that touches app groups,
 keychain groups or File Provider behaves differently, and it fails as an
 assert rather than a diagnosable error.
 
+## Renaming the embedded frameworks crashes the shipped app (fixed 2026-08-27)
+
+The device build died with `EXC_BREAKPOINT` a few seconds after an account
+connected - build 21, iPhone 18,4, iOS 26.6 - while the simulator smoke was
+5/5 green. Symbolicated against the archive's dSYM:
+
+```
+AccountConnection.status.didSet
+  AccountController.account(connection:changedStatusTo:)  AccountController.swift:223
+  AccountController.composeItemsDataSource()              AccountController.swift:455
+  dispatch_once: one-time initialization of cloudAvailableOfflineStatusIcon
+```
+
+That icon comes from `Bundle.sharedAppBundle`, and upstream defines it as
+
+```swift
+private let _sharedAppBundle = Bundle(identifier: "com.owncloud.ownCloudAppShared")
+public extension Bundle {
+    static var sharedAppBundle : Bundle { return _sharedAppBundle! }
+}
+```
+
+a HARDCODED id, force-unwrapped. `aity_ids` was renaming the two embedded
+frameworks to `<app-id>.framework` / `.shared` purely so no bundle id of
+ours carried the upstream trademark. That made the lookup nil, and the
+first icon or localised string drawn from the shared bundle trapped.
+
+Both frameworks now keep upstream's ids. They are internal - no user sees a
+framework bundle id - which is the same line already drawn for the
+executable name `ownCloud`. If a future Bump renames or removes that
+constant, this becomes safe to revisit; grep for `Bundle(identifier:` in
+the Pin (v12.7.0 has exactly one).
+
+**Why the simulator never caught it:** `build_simulator_smoke` runs
+`aity_apply_identity` but NOT `aity_apply_signing`, and the framework ids
+are rewritten in the SIGNING lane. So the simulator built upstream's ids
+and worked, while every signed store build was broken. Any future identity
+change that lives only in the signing path has the same blind spot - the
+account-journey smoke cannot see it.
+
