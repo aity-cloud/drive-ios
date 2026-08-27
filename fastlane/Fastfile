@@ -244,8 +244,25 @@ platform :ios do
     end
     missing = target_ids.keys - found
     UI.user_error!("targets missing from ownCloud.xcodeproj: #{missing.join(', ')} - upstream renamed a target, fix the map") unless missing.empty?
+
+    # APP_PRODUCT_NAME is upstream's OWN branding hook and it defaults to
+    # "ownCloud": the extensions' display names are
+    # "Save to $(APP_PRODUCT_NAME)" / "Share to $(APP_PRODUCT_NAME)", so
+    # build 18 offered "Save to ownCloud" in the iOS share sheet
+    # (2026-08-27). Set on every configuration of every target.
+    project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings["APP_PRODUCT_NAME"] = app_name
+      end
+    end
     project.save
     UI.message("PRODUCT_BUNDLE_IDENTIFIER set on #{found.length} targets (#{ids[:app]})")
+
+    # Upstream's trademark survives in places Branding.plist never reaches:
+    # localised UI strings ("Use ownCloud actions in Shortcuts." shipped in
+    # 23 languages) and Info.plist display names. The GPL gives us the code,
+    # not the name - strip it from every user-visible VALUE.
+    sh "python3 '#{File.join(FACTORY_ROOT, 'scripts/debrand-strings.py')}' '#{File.expand_path('..', Dir.pwd)}' '#{app_name}' '#{ids[:app]}'"
 
     # Upstream: app group + keychain access group in every entitlements
     # file. The keychain group is Team-ID-prefixed; without a team (the
