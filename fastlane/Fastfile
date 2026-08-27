@@ -207,6 +207,46 @@ platform :ios do
       )
     end
 
+    # ...and then make it true, per TARGET, because the line above is not
+    # sufficient at this Pin. Every target here takes its identifier from
+    # PRODUCT_BUNDLE_IDENTIFIER (the plists carry
+    # `$(PRODUCT_BUNDLE_IDENTIFIER)`), and `update_app_identifier` decides
+    # what to do by reading CFBundleIdentifier out of the plist first -
+    # but `ownCloud Action Extension/Info.plist` has NO CFBundleIdentifier
+    # key at all (verified in the materialised v12.7.0 tree: its only
+    # CFBundle* keys are Icons, PrimaryIcon, SymbolName, DisplayName). So
+    # that one target was silently skipped, kept upstream's
+    # com.owncloud.ios-app.ownCloud-Action-Extension, and Xcode refused the
+    # build outright: "Embedded binary's bundle identifier is not prefixed
+    # with the parent app's bundle identifier" (first real Mac run,
+    # 2026-08-27). Setting the build setting directly is authoritative,
+    # and the missing-target check means a Bump that renames a target
+    # fails loudly here instead of producing a mis-identified app.
+    require "xcodeproj"
+    target_ids = {
+      "ownCloud" => ids[:app],
+      "ownCloud File Provider" => ids[:fileprovider],
+      "ownCloud File Provider UI" => ids[:fileprovider_ui],
+      "ownCloudApp" => ids[:framework],
+      "ownCloud Intents" => ids[:intents],
+      "ownCloud Share Extension" => ids[:share],
+      "ownCloud Action Extension" => ids[:action]
+    }
+    project = Xcodeproj::Project.open("../ownCloud.xcodeproj")
+    found = []
+    project.targets.each do |target|
+      wanted = target_ids[target.name]
+      next unless wanted
+      found << target.name
+      target.build_configurations.each do |config|
+        config.build_settings["PRODUCT_BUNDLE_IDENTIFIER"] = wanted
+      end
+    end
+    missing = target_ids.keys - found
+    UI.user_error!("targets missing from ownCloud.xcodeproj: #{missing.join(', ')} - upstream renamed a target, fix the map") unless missing.empty?
+    project.save
+    UI.message("PRODUCT_BUNDLE_IDENTIFIER set on #{found.length} targets (#{ids[:app]})")
+
     # Upstream: app group + keychain access group in every entitlements
     # file. The keychain group is Team-ID-prefixed; without a team (the
     # unsigned simulator build ignores entitlements) a placeholder keeps

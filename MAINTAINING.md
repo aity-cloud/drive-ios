@@ -105,3 +105,25 @@ the date and what was found.
   change (it is the identity-table contract, not decoration).
 - The `lint` job must stay green on every push to main - it is the only
   continuously-running validation this Factory has until the Mac exists.
+
+## The Action Extension keeps upstream's bundle id (hit 2026-08-27)
+
+First real run on the `macos` runner failed with `Embedded binary's bundle
+identifier is not prefixed with the parent app's bundle identifier`
+(embedded `com.owncloud.ios-app.ownCloud-Action-Extension`, parent
+`tech.aity.drive.staging`). Cause: every target takes its id from
+`PRODUCT_BUNDLE_IDENTIFIER`, and `update_app_identifier` reads
+`CFBundleIdentifier` from the plist to decide what to do - but
+`ownCloud Action Extension/Info.plist` does not define that key at this Pin
+(its only CFBundle* keys are Icons, PrimaryIcon, SymbolName, DisplayName),
+so the action silently skipped it. The lane now sets
+`PRODUCT_BUNDLE_IDENTIFIER` per target with Xcodeproj after upstream's
+calls, and fails if a mapped target name is missing - check that map on
+every Bump.
+
+Related: two log traps found in the same run. `xcodebuild | tee` blew
+GitLab's 4 MB job-log cap and truncated the job before the error was
+visible (log to a file, print errors on failure, ship the log as an
+artifact), and `ensure_xcode_version` needs the abandoned `xcode-install`
+gem, which is not in the Pin's Gemfile.
+
