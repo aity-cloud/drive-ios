@@ -149,6 +149,66 @@ smoke:simulator:
 # driven"). Reuses the app the previous run built - AITY_SMOKE_SKIP_BUILD -
 # so N runs cost N test executions, not N compiles of the whole Pin on a
 # MacBook Air. Reports the rate; only a 0/N is a hard failure.
+# Read-only: print the crash reports the simulator wrote for our app.
+# "Unexpected termination" in XCUITest tells you nothing about WHY; the
+# reason is in DiagnosticReports on the runner (simulator app crashes land
+# in the HOST's ~/Library/Logs/DiagnosticReports since Xcode 11). Added
+# 2026-08-27 while chasing "the app terminates after opening the personal
+# space" - reading this before touching the test is the whole point.
+diagnose:crash-reports:
+  extends: .macos
+  stage: smoke
+  allow_failure: true
+  script:
+    - |
+      set -eu
+      echo "=== recent DiagnosticReports mentioning the app ==="
+      DIR="$HOME/Library/Logs/DiagnosticReports"
+      ls -t "$DIR" 2>/dev/null | head -40 || echo "(no DiagnosticReports directory)"
+      echo
+      found=0
+      for f in $(ls -t "$DIR"/*.ips "$DIR"/*.crash 2>/dev/null | head -60); do
+        if grep -q "tech.aity.drive" "$f" 2>/dev/null; then
+          found=$((found+1))
+          echo "########## $f"
+          # .ips files are a JSON header line followed by a JSON payload
+          python3 - "$f" <<'PYEOF'
+      import json, sys
+      raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+      parts = raw.split("\n", 1)
+      try:
+          head = json.loads(parts[0])
+          print("  app_name      :", head.get("app_name"), head.get("app_version"))
+          print("  timestamp     :", head.get("timestamp"))
+      except Exception:
+          print(parts[0][:200])
+      body = {}
+      if len(parts) > 1:
+          try:
+              body = json.loads(parts[1])
+          except Exception:
+              print(parts[1][:1500]); raise SystemExit
+      print("  exception     :", body.get("exception"))
+      print("  termination   :", body.get("termination"))
+      print("  isCorpse      :", body.get("isCorpse"), " asi:", str(body.get("asi"))[:300])
+      faulting = body.get("faultingThread")
+      for i, th in enumerate(body.get("threads", [])):
+          if th.get("triggered") or i == faulting:
+              print("  --- triggered thread", i, th.get("name") or "")
+              used = body.get("usedImages", [])
+              for fr in th.get("frames", [])[:22]:
+                  idx = fr.get("imageIndex", -1)
+                  img = used[idx].get("name") if 0 <= idx < len(used) else "?"
+                  print("     %-28s %s +%s" % (img, fr.get("symbol") or "", fr.get("imageOffset")))
+              break
+      PYEOF
+          echo
+        fi
+      done
+      [ "$found" -gt 0 ] || echo "NO crash report mentions tech.aity.drive - the app was terminated WITHOUT crashing (look at jetsam/appstate, not a stack)."
+      echo "=== simulator jetsam / termination events ==="
+      log show --last 30m --style compact --predicate 'process == "SpringBoard" OR eventMessage CONTAINS "tech.aity.drive"' 2>/dev/null | grep -i -E 'termin|jetsam|watchdog|kill' | tail -25 || echo "(log show unavailable)"
+
 measure:smoke-flakiness:
   extends: .macos
   stage: smoke
