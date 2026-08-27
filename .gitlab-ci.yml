@@ -110,6 +110,7 @@ bootstrap:apple:
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
+    - brew bundle --file Brewfile
     - cd build/upstream
     - bundle install
     - bundle exec fastlane ios aity_bootstrap_apple
@@ -124,6 +125,7 @@ publish:staging-testflight:
   stage: publish-staging
   script:
     - bash scripts/materialize.sh staging
+    - brew bundle --file Brewfile
     - cd build/upstream
     - bundle install
     - bundle exec fastlane ios build_staging_testflight
@@ -144,6 +146,7 @@ publish:preprod-testflight:
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
+    - brew bundle --file Brewfile
     - cd build/upstream
     - bundle install
     - bundle exec fastlane ios build_preprod_testflight

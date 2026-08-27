@@ -4,9 +4,6 @@
 source "https://rubygems.org"
 
 gem "fastlane"
-# gym's default xcodebuild formatter. Without it gym still PIPES to it under
-# pipefail, so its absence surfaces as a bogus "ARCHIVE FAILED" (exit 127).
-gem "xcpretty"
 
 plugins_path = File.join(File.dirname(__FILE__), "fastlane", "Pluginfile")
 eval_gemfile(plugins_path) if File.exist?(plugins_path)
