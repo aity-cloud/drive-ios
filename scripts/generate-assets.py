@@ -10,9 +10,9 @@ Outputs (dimensions mirror the Pin's default assets in
 ownCloud/Resources/Theming/com.owncloud.ios-app/):
 
   overlay/common/.../branding-assets/
-    branding-logo.png                   2048x2048 transparent, mark centred
+    branding-logo.png                   2048x2048 opaque white, mark centred
     branding-background.png             1280x1920 flat white
-    branding-splashscreen-logo.png      2048x2048 transparent, mark centred
+    branding-splashscreen-logo.png      2048x2048 opaque white, mark centred
     branding-splashscreen-background.png  1x1 flat white (stretched at runtime)
     branding-sidebar-link-icon.png      2048x2048 transparent, mark centred
   overlay/production/.../branding-assets/
@@ -148,10 +148,15 @@ def main() -> None:
         sys.exit(1)
 
     # Login / brand view and splashscreen logos: generous whitespace, the
-    # app scales them into its BrandView.
-    logo = mark_on_canvas(2048, 0.72)
-    save(logo, COMMON / "branding-logo.png")
-    save(logo, COMMON / "branding-splashscreen-logo.png")
+    # app scales them into its BrandView. OPAQUE WHITE, not transparent
+    # (decision 2026-08-27): a transparent mark inherits whatever the theme
+    # puts behind it, which is how the logo went missing on a surface that
+    # is not white. The sidebar link icon stays transparent deliberately -
+    # it is composited onto the app's own accent bar, where a white square
+    # would be the defect rather than the fix.
+    logo = mark_on_canvas(2048, 0.72, background=WHITE)
+    save(logo, COMMON / "branding-logo.png", opaque=True)
+    save(logo, COMMON / "branding-splashscreen-logo.png", opaque=True)
     save(mark_on_canvas(2048, 0.72), COMMON / "branding-sidebar-link-icon.png")
 
     background = Image.new("RGBA", (1280, 1920), WHITE)
