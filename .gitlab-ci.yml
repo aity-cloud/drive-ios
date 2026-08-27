@@ -77,7 +77,15 @@ lint:
 
 .macos:
   tags: [macos]
-  when: manual # until the macos runner exists (runbooks/mac-runner.md)
+  when: manual
+  # No `needs` on the Linux stage: these jobs re-materialise the whole tree
+  # on the Mac and consume nothing from lint, so waiting for it only couples
+  # them to a runner they do not use. That coupling cost a full verification
+  # cycle on 2026-08-27, when the Linux runner could not resolve
+  # registry.aity.tech and every Xcode job sat queued behind a stuck image
+  # pull for 40 minutes. lint still gates nothing less: it runs on every push
+  # and a red lint is still a red pipeline.
+  needs: []
   timeout: 2h
   variables:
     # Xcode per the Pin's .xcode-version; selected via DEVELOPER_DIR by
