@@ -368,16 +368,17 @@ platform :ios do
     ids = aity_ids(env)
     signed_ids = [ids[:app], ids[:fileprovider], ids[:fileprovider_ui], ids[:intents], ids[:share], ids[:action]]
 
-    # SIGNING MODE. Default is Xcode-managed ("automatic"), because Apple
-    # does NOT expose App Groups in the App Store Connect API: with match's
-    # manual profiles, every extension's App ID has to be associated with
-    # its group BY HAND in the portal, and a profile minted before that
-    # shows up as "doesn't support the group.* App Group" (2026-08-27).
-    # Xcode, given the same API key and -allowProvisioningUpdates, registers
-    # what is missing - app groups included - and mints its own profiles.
-    # AITY_SIGNING=match restores the reproducible-profile path once the
-    # portal state is complete.
-    automatic = ENV["AITY_SIGNING"] != "match"
+    # SIGNING MODE. Apple does NOT expose App Groups in the App Store
+    # Connect API - it will not even report an assignment (the diagnostic
+    # lane gets settings=nil for ids that demonstrably have one) - so every
+    # App ID was associated with its group by hand in the portal, once.
+    # With that done, manual profiles are correct and reproducible.
+    # Default is MATCH (reproducible profiles, versioned in the certificates
+    # repo, nothing improvised at release time) - flipped back on 2026-08-27
+    # once every App ID carried its group. AITY_SIGNING=automatic is the
+    # escape hatch: it lets Xcode register whatever is missing in the portal,
+    # which is how you recover if a Bump adds a target.
+    automatic = ENV["AITY_SIGNING"] == "automatic"
 
     if automatic
       UI.message("Signing: Xcode-managed (-allowProvisioningUpdates)")
