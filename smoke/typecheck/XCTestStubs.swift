@@ -91,7 +91,9 @@ public class XCUIElement {
 	public func waitForExistence(timeout: TimeInterval) -> Bool { false }
 	public func coordinate(withNormalizedOffset offset: CGVector) -> XCUICoordinate { XCUICoordinate() }
 
+	public var identifier: String { "" }
 	public var buttons: XCUIElementQuery { XCUIElementQuery() }
+	public var navigationBars: XCUIElementQuery { XCUIElementQuery() }
 	public var staticTexts: XCUIElementQuery { XCUIElementQuery() }
 	public var textFields: XCUIElementQuery { XCUIElementQuery() }
 	public var secureTextFields: XCUIElementQuery { XCUIElementQuery() }
@@ -115,6 +117,7 @@ public final class XCUIElementQuery {
 	public func matching(_ predicate: NSPredicate) -> XCUIElementQuery { self }
 	public func containing(_ elementType: XCUIElement.ElementType, identifier: String?) -> XCUIElementQuery { self }
 	public var buttons: XCUIElementQuery { self }
+	public var navigationBars: XCUIElementQuery { self }
 	public var staticTexts: XCUIElementQuery { self }
 	public var textFields: XCUIElementQuery { self }
 	public var secureTextFields: XCUIElementQuery { self }

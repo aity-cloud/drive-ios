@@ -113,10 +113,20 @@ final class AccountJourneySmokeTests: XCTestCase {
 
 		// --- Create a folder from the app and watch it show up.
 		XCTContext.runActivity(named: "Create the folder \(createdFolder) from the app") { _ in
-			let plus = app.buttons["client.file-add"]
-			XCTAssertTrue(plus.waitForExistence(timeout: 30),
-			              "the add-content (+) button is missing from the personal space\n\n\(hierarchy(app))")
-			plus.tap()
+			// The "+" is a UIBarButtonItem, so depending on how the navigation
+			// bar is laid out it can surface under app.buttons or only under
+			// the navigation bar's own query. Its accessibilityIdentifier is
+			// `client.file-add` and its accessibilityLabel is "Add item".
+			let plus = waitFor({
+				[app.buttons["client.file-add"],
+				 app.navigationBars.buttons["client.file-add"],
+				 app.buttons["Add item"],
+				 app.navigationBars.buttons["Add item"]]
+					.first { $0.exists && $0.isHittable }
+			}, timeout: 60)
+			XCTAssertNotNil(plus,
+			                "the add-content (+) button is missing from the personal space\n\n\(hierarchy(app))")
+			plus?.tap()
 
 			let createFolder = app.buttons["Create folder"].firstMatch
 			XCTAssertTrue(createFolder.waitForExistence(timeout: 20),
@@ -489,8 +499,16 @@ final class AccountJourneySmokeTests: XCTestCase {
 	/// reads anyway.
 	private func visibleLabels(_ app: XCUIApplication) -> [String] {
 		var labels: [String] = []
-		for query in [app.staticTexts, app.buttons, app.cells] {
+		for query in [app.staticTexts, app.cells] {
 			labels += query.allElementsBoundByIndex.prefix(60).map { $0.label }
+		}
+		// Buttons carry BOTH a label and an accessibilityIdentifier, and this
+		// app addresses most of them by identifier (client.file-add and
+		// friends). Printing only the label hides exactly what a query needs.
+		for query in [app.buttons, app.navigationBars.buttons] {
+			labels += query.allElementsBoundByIndex.prefix(40).map {
+				$0.identifier.isEmpty ? "button '\($0.label)'" : "button '\($0.label)' id=\($0.identifier)"
+			}
 		}
 		return Array(Set(labels.filter { !$0.isEmpty })).sorted()
 	}
