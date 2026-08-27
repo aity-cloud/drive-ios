@@ -48,6 +48,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LOGO_SVG = REPO_ROOT.parent / "meta" / "brand" / "logo.svg"
 
 COMMON = REPO_ROOT / "overlay/common/ownCloud/Resources/Theming/branding-assets"
+# Xcode 26's Icon Composer asset. Upstream ships ownCloud's own
+# (AppIcon.icon with owncloud-logo.svg on ownCloud blue) and Xcode PREFERS
+# it over the classic AppIcon.appiconset, so filling the appiconset alone
+# shipped build 18 with the ownCloud icon (found 2026-08-27 by unpacking
+# the IPA: Assets.car carried AppIcon_Assets/owncloud-logo). Both are
+# generated now; this one is the one that wins.
+ICON_COMPOSER_PRODUCTION = REPO_ROOT / "overlay/production/ownCloud/Resources/AppIcon.icon"
+ICON_COMPOSER_STAGING = REPO_ROOT / "overlay/staging/ownCloud/Resources/AppIcon.icon"
 PRODUCTION = REPO_ROOT / "overlay/production/ownCloud/Resources/Theming/branding-assets"
 STAGING = REPO_ROOT / "overlay/staging/ownCloud/Resources/Theming/branding-assets"
 
@@ -142,6 +150,48 @@ def save(image: Image.Image, path: Path, opaque: bool = False) -> None:
     print(f"generate-assets: wrote {path.relative_to(REPO_ROOT)} {image.size}")
 
 
+ICON_LAYER_NAME = "aity-drive-icon.png"
+
+
+def write_icon_composer(target: Path, icon: Image.Image) -> None:
+    """Overwrite upstream's AppIcon.icon with ours.
+
+    Same directory and same icon.json path as upstream, so the project's
+    existing file references stay valid; only the fill and the layer image
+    are ours. The layer image is the finished opaque icon, so what ships is
+    exactly what branding-icon.png shows.
+    """
+    import json
+
+    assets = target / "Assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    save(icon, assets / ICON_LAYER_NAME, opaque=True)
+
+    manifest = {
+        "fill": {"solid": "extended-gray:1.00000,1.00000"},  # white
+        "groups": [
+            {
+                "blur-material": None,
+                "hidden": False,
+                "layers": [
+                    {
+                        "glass": False,
+                        "image-name": ICON_LAYER_NAME,
+                        "name": "aity-drive",
+                        "position": {"scale": 1.0, "translation-in-points": [0, 0]},
+                    }
+                ],
+                "shadow": {"kind": "neutral", "opacity": 0.35},
+                "specular": False,
+                "translucency": {"enabled": False, "value": 0.0},
+            }
+        ],
+        "supported-platforms": {"circles": ["watchOS"], "squares": "shared"},
+    }
+    (target / "icon.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"generate-assets: wrote {(target / 'icon.json').relative_to(REPO_ROOT)}")
+
+
 def main() -> None:
     if not LOGO_SVG.exists():
         print(f"generate-assets: brand master not found at {LOGO_SVG}", file=sys.stderr)
@@ -164,8 +214,15 @@ def main() -> None:
     save(Image.new("RGBA", (1, 1), WHITE), COMMON / "branding-splashscreen-background.png", opaque=True)
 
     # App icon source: opaque, mark at ~64% on white.
-    save(mark_on_canvas(1024, 0.64, background=WHITE), PRODUCTION / "branding-icon.png", opaque=True)
-    save(staging_icon(1024), STAGING / "branding-icon.png", opaque=True)
+    production_icon = mark_on_canvas(1024, 0.64, background=WHITE)
+    staging_icon_image = staging_icon(1024)
+    save(production_icon, PRODUCTION / "branding-icon.png", opaque=True)
+    save(staging_icon_image, STAGING / "branding-icon.png", opaque=True)
+
+    # ...and the same artwork as the Icon Composer asset Xcode 26 actually
+    # uses for the home-screen icon.
+    write_icon_composer(ICON_COMPOSER_PRODUCTION, production_icon)
+    write_icon_composer(ICON_COMPOSER_STAGING, staging_icon_image)
 
 
 if __name__ == "__main__":

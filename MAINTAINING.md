@@ -156,3 +156,26 @@ App groups (`group.tech.aity.drive`, `group.tech.aity.drive.staging`) are
 also outside the API. If a signed build fails on a missing
 application-groups entitlement, create and associate them in the portal.
 
+## The app icon comes from AppIcon.icon, not AppIcon.appiconset (2026-08-27)
+
+Build 18 shipped with ownCloud's own app icon even though the lane
+generated a full AppIcon.appiconset from our brand mark. Xcode 26 prefers
+the Icon Composer asset when one exists, and the Pin ships
+`ownCloud/Resources/AppIcon.icon` (owncloud-logo.svg on ownCloud blue,
+referenced four times in project.pbxproj). Proof, from unpacking the
+uploaded IPA: `Assets.car` contains `AppIcon_Assets/owncloud-logo` plus
+the Icon Composer appearance variants; our appiconset was compiled and
+ignored.
+
+`scripts/generate-assets.py` now writes an `AppIcon.icon` per Environment -
+same directory and icon.json path as upstream, so the project's file
+references stay valid - with a white fill and our finished icon as the
+single layer. The appiconset is still generated (harmless, and it is what
+older toolchains would use). On a Bump, check whether upstream changed the
+Icon Composer manifest schema.
+
+Related, same day: the in-app `branding-logo.png` and
+`branding-splashscreen-logo.png` were transparent, so the mark vanished on
+any non-white surface; both are opaque white now. The sidebar link icon
+stays transparent on purpose.
+
