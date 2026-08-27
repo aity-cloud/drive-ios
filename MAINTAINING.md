@@ -229,10 +229,12 @@ in the run before. So it is a race, not a deterministic crash, and it is on
 the app's side - the test does nothing but tap and read after that point.
 
 What this means for the smoke: `AccountJourneySmokeTests` has NOT had a fully
-green run yet, and its pass rate is 0/6. That is a genuine finding, not a
-flaky test to paper over - the smoke is doing exactly the job it exists for.
-`LoginScreenSmokeTests` is 6/6 in the same runs, and the sign-in half of the
-journey works every time.
+green run. Measured with `measure:smoke-flakiness` (job 16150229491,
+2026-08-27): **0 of 5**, every one of them the same termination. Across the
+manual runs before it, 0 of 6. That is a genuine finding, not a flaky test to
+paper over - the smoke is doing exactly the job it exists for.
+`LoginScreenSmokeTests` is 6/6 over the same runs, and the sign-in half of
+the journey works every time, in about 13 seconds.
 
 Next step for whoever picks this up: the crash log is on the simulator
 (`~/Library/Logs/DiagnosticReports` on the Mac runner, and inside the
