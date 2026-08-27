@@ -120,6 +120,16 @@ bootstrap:apple:
     paths:
       - apple-team-id.txt
 
+# Read-only diagnostic: which App IDs actually carry an App Group.
+check:app-groups:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_check_app_groups
+
 publish:staging-testflight:
   extends: .macos
   stage: publish-staging

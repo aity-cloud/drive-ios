@@ -560,6 +560,62 @@ platform :ios do
     end
   end
 
+  desc "Read-only: ask Apple which App IDs actually carry an App Group, and"
+  desc "try to attach the missing ones. Prints a per-id verdict."
+  lane :aity_check_app_groups do
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8])
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      filepath: File.absolute_path(ENV.fetch("ASC_KEY_P8"))
+    )
+
+    missing = []
+    AITY_IDENTITY.each_key do |env|
+      ids = aity_ids(env)
+      group = ids[:group]
+      [ids[:app], ids[:fileprovider], ids[:fileprovider_ui], ids[:intents], ids[:share], ids[:action]].each do |identifier|
+        bundle = Spaceship::ConnectAPI::BundleId.find(identifier)
+        if bundle.nil?
+          UI.error("#{identifier}: NO SUCH App ID")
+          next
+        end
+        caps = bundle.get_capabilities
+        app_groups = caps.find { |c| c.capability_type == "APP_GROUPS" }
+        if app_groups.nil?
+          UI.error("#{identifier}: App Groups capability NOT enabled")
+          missing << identifier
+          next
+        end
+        # Apple returns the assigned groups (when it returns them at all) in
+        # the capability's settings; an empty/absent settings list is the
+        # "ticked but nothing selected" state that fails the build.
+        settings = begin
+          app_groups.settings
+        rescue StandardError
+          nil
+        end
+        UI.message("#{identifier}: APP_GROUPS settings=#{settings.inspect}")
+        if settings.nil? || settings.to_s.empty? || settings.to_s == "[]"
+          UI.important("#{identifier}: capability on, but no group visible via the API")
+          missing << identifier
+        else
+          UI.success("#{identifier}: group assigned")
+        end
+      end
+      UI.message("--- #{env} expects #{group}")
+    end
+
+    if missing.empty?
+      UI.success("Every App ID reports an App Group assignment.")
+    else
+      UI.important("")
+      UI.important("These App IDs have no group visible through the API:")
+      missing.each { |m| UI.important("  #{m}") }
+      UI.important("If a signed build still fails on the App Group, these are the ones to fix in the portal.")
+    end
+  end
+
   # ---------------------------------------------------------------------
   # ONE-TIME Apple bootstrap. Idempotent: safe to re-run, creates only what
   # is missing. Everything it touches lives in Apple's account, not in this
