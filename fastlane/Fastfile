@@ -388,6 +388,17 @@ platform :ios do
       output_name: "aity-drive-#{env}-#{build_number}.ipa",
       export_method: "app-store",
       xcargs: "CODE_SIGN_STYLE=Manual APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
+      # gym pipes xcodebuild through a formatter and runs with pipefail, so a
+      # MISSING formatter reports as "** ARCHIVE FAILED **" with exit 127 and
+      # hides whatever the build actually did - which is exactly what the
+      # first signed build did (2026-08-27: `sh: xcpretty: command not found`
+      # four lines above a failure that had nothing to do with the code).
+      # xcpretty is in the Gemfile for that reason; keeping the formatter
+      # also keeps the console output under GitLab's 4 MB job-log cap.
+      xcodebuild_formatter: "xcpretty",
+      # ...and the unformatted transcript lands in the workspace, shipped as
+      # a job artifact, so the next failure is diagnosable without a re-run.
+      buildlog_path: "gym-logs",
       export_options: {
         method: "app-store",
         provisioningProfiles: profile_map
