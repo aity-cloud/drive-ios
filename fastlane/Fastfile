@@ -568,8 +568,13 @@ platform :ios do
                 "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}' " \
                 "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}' " \
                 "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}' " \
+                # NOT -quiet: -quiet suppresses the assertion messages, so a
+                # failed run leaves only "** TEST FAILED **" in the log and the
+                # detail exists solely inside the .xcresult - which needs a Mac
+                # to read. That cost a full round trip on 2026-08-27. The full
+                # transcript still goes to a file, never to the console.
                 "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
-                "-scheme AityDriveSmokeUITests -quiet " \
+                "-scheme AityDriveSmokeUITests " \
                 "-resultBundlePath '#{result_bundle}' " \
                 "#{only.empty? ? '' : "-only-testing:#{only} "}" \
                 "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
@@ -577,10 +582,13 @@ platform :ios do
       passed = system(command)
       results << passed
       unless passed
-        UI.error("--- smoke run #{run} failed, error lines ---")
-        sh "grep -nE 'error:|failed|Failing tests' #{log} | tail -40 || true"
+        UI.error("--- smoke run #{run} failed, assertions ---")
+        sh "grep -nE 'error:|XCTAssert|Test Case .* failed|Failing tests|Assertion Failure' #{log} | tail -60 || true"
         UI.error("--- last 120 lines ---")
         sh "tail -120 #{log} || true"
+        # Belt and braces: the structured result, for the cases where the
+        # console transcript still says nothing useful.
+        sh "xcrun xcresulttool get test-results tests --path '#{result_bundle}' 2>/dev/null | head -200 || true"
       end
       UI.message("smoke run #{run}/#{repeat}: #{passed ? 'PASS' : 'FAIL'}")
     end

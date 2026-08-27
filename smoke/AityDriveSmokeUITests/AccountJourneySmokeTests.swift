@@ -73,7 +73,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		let space = try XCTContext.runActivity(named: "Resolve the personal space WebDAV URL") { _ in
 			try server.personalSpaceWebDAVURL(token: token)
 		}
-		try XCTContext.runActivity(named: "Seed \(seededFile) into the personal space") { _ in
+		_ = try XCTContext.runActivity(named: "Seed \(seededFile) into the personal space") { _ in
 			try server.putFile(named: seededFile, contents: "aity drive ios smoke \(runID)\n",
 			                   inSpace: space, token: token)
 		}
@@ -111,7 +111,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		attach(app, named: "personal-space-file-list")
 
 		// --- Create a folder from the app and watch it show up.
-		try XCTContext.runActivity(named: "Create the folder \(createdFolder) from the app") { _ in
+		XCTContext.runActivity(named: "Create the folder \(createdFolder) from the app") { _ in
 			let plus = app.buttons["client.file-add"]
 			XCTAssertTrue(plus.waitForExistence(timeout: 30),
 			              "the add-content (+) button is missing from the personal space\n\n\(hierarchy(app))")
@@ -149,7 +149,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		)
 
 		// --- Delete it from the app and watch it go.
-		try XCTContext.runActivity(named: "Delete \(createdFolder) from the app") { _ in
+		XCTContext.runActivity(named: "Delete \(createdFolder) from the app") { _ in
 			let cell = cell(app, named: createdFolder)
 			XCTAssertTrue(cell.exists, "the created folder vanished before it could be deleted")
 			cell.press(forDuration: 1.2)
