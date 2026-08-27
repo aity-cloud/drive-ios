@@ -205,173 +205,42 @@ What the first real runs established (2026-08-27), so nobody re-derives it:
   journey leaves the app signed in, so running them together reported the
   login-screen smoke as broken when it was not.
 
-### The app terminates after opening the personal space (open, 2026-08-27)
+### The app terminates after opening the personal space (FIXED, 2026-08-27)
 
-The journey reaches the file list and the seeded file appears (run
-16149784314 got past that assertion and on to the "+" button), but **the app
-intermittently dies a few seconds after the personal space is opened**.
-XCUITest reports it as `Failed to get matching snapshot: Lost connection to
-the application (pid ...)` or `Application tech.aity.drive.staging is not
-running`, followed by "Checking for crash reports corresponding to
-unexpected termination".
+Was: connecting an account killed the app with SIGABRT a few seconds after
+the personal space opened, 0 runs out of 5.
 
-The sequence, from run 16149927452:
+The crash report (host `~/Library/Logs/DiagnosticReports`, read with the
+`diagnose:crash-reports` job) named it exactly:
 
 ```
-t = 11.44s  Tap "Done"                       (account setup complete)
-t = 12.33s  Tap the account row              (connects; "Status Online" appears)
-t = 14.49s  Tap "Personal"                   (opens the personal space)
-t = 21.78s  ... unexpected termination of tech.aity.drive.staging
+EXC_CRASH (SIGABRT), uncaught ObjC exception
+  Foundation    -[NSAssertionHandler handleFailureInMethod:...]
+  FileProvider  -[NSFileProviderManager documentStorageURL]
+  ownCloudSDK   +[OCVault storageRootURL]
+  ownCloudApp   -[OCFileProviderServiceSession initWithBookmark:]
+  ownCloudApp   -[OCFileProviderServiceStandby initWithCore:]
+  ownCloudAppShared AccountConnection.startFPServiceStandbyIfNotRunning()
+  ownCloudAppShared AccountConnection.connect(consumer:completion:)
 ```
 
-Every run of the measurement, at the same point: tap "Personal", about six
-seconds later the app is gone. Not quite deterministic though - one earlier
-run (16149784314) survived the identical taps, listed the files and got as
-far as the "+" button - so it is a race rather than a hard crash on that
-code path. It is on the app's side either way: the test does nothing but tap
-and read after that point.
+Connecting an account starts the File Provider standby, which asks
+`NSFileProviderManager.documentStorageURL` for the shared container.
+That API ASSERTS when the app group is not available - and the smoke was
+building with `CODE_SIGNING_ALLOWED=NO`, which strips the entitlements,
+so the container did not exist. **The app was never broken; the test
+build was.** Nothing about it was app-specific, which is why it looked
+like a race: it depended only on how far the connect sequence got before
+the standby kicked in.
 
-What this means for the smoke: `AccountJourneySmokeTests` has NOT had a fully
-green run. Measured with `measure:smoke-flakiness` (job 16150229491,
-2026-08-27): **0 of 5**, every one of them the same termination. Across the
-manual runs before it, 0 of 6. That is a genuine finding, not a flaky test to
-paper over - the smoke is doing exactly the job it exists for.
-`LoginScreenSmokeTests` is 6/6 over the same runs, and the sign-in half of
-the journey works every time, in about 13 seconds.
+Fixed by ad-hoc signing the simulator build (`CODE_SIGN_IDENTITY='-'`,
+`CODE_SIGNING_REQUIRED=NO`) so the entitlements - and therefore the app
+group container - are real. Still needs no Apple account. First green run
+of `AccountJourneySmokeTests` followed immediately, including the
+create-folder / delete-folder half that had never executed.
 
-Next step for whoever picks this up: the crash log is on the simulator
-(`~/Library/Logs/DiagnosticReports` on the Mac runner, and inside the
-`.xcresult`) - read it before changing anything in the test. `smoke:simulator`
-is `when: manual`, and manual jobs are allow_failure by default, so nothing
-is gated on this today.
-
-Before pushing anything in `smoke/`, run
-**`scripts/check-smoke-swift.sh`**. `swiftc -parse` only parses - it never
-resolves a name - so deleting a helper that is still called compiles clean
-locally and fails on the Mac. That happened on 2026-08-27 and cost a round
-trip on Raul's laptop for a missing `clear()`. The script type-checks the
-smoke sources against hand-written XCTest/XCUITest stubs
-(`smoke/typecheck/XCTestStubs.swift`) on Linux, and the `typecheck:smoke` CI
-job runs the same command. Green there means "worth sending to the Mac", not
-"this will pass": the stubs are hand-written and can drift, so when Xcode
-disagrees about a signature, fix the stub too.
-
-Operational notes for the lane:
-
-- **DerivedData moved out of the materialised tree.** `materialize.sh` runs
-  `git clean -fd` inside `build/upstream`, and upstream's `.gitignore` covers
-  `build/` but not `build-simulator`, so the old `-derivedDataPath ../build-simulator`
-  was deleted before every single build - every run was a cold compile of the
-  whole Pin on a MacBook Air. It is now `<factory>/build/derived-simulator`,
-  which survives and makes repeat runs incremental.
-- **Each repeat starts from a fresh install.** The lane uninstalls and
-  reinstalls between runs, because the account the previous run created lives
-  in the app group container and a second run that starts logged in is not the
-  test anyone wrote.
-- `AITY_SMOKE_REPEAT` (default 1) measures the pass rate,
-  `AITY_SMOKE_SKIP_BUILD=true` reuses the existing `.app`, `AITY_SMOKE_TESTS`
-  narrows to one class. The `measure:smoke-flakiness` job wires all three.
-- Without `AITY_CONTRACT_USER` / `AITY_CONTRACT_PASSWORD` the journey
-  `XCTSkip`s itself and the login-screen smoke still runs, so a workstation
-  without secrets gets a useful subset instead of a red run it cannot fix.
-
-## Standing duties
-
-- **Every Bump: re-diff the Fastfile transcription** against upstream's
-  `build_ipa_in_house` (see UPSTREAM.md step 3). This is the price of the
-  parameterised shared-framework id and the simulator lane; pay it.
-- Keep `scripts/check-plists.py` in lockstep with any Branding.plist
-  change (it is the identity-table contract, not decoration).
-- The `lint` job must stay green on every push to main - it is the only
-  continuously-running validation this Factory has until the Mac exists.
-
-## The Action Extension keeps upstream's bundle id (hit 2026-08-27)
-
-First real run on the `macos` runner failed with `Embedded binary's bundle
-identifier is not prefixed with the parent app's bundle identifier`
-(embedded `com.owncloud.ios-app.ownCloud-Action-Extension`, parent
-`tech.aity.drive.staging`). Cause: every target takes its id from
-`PRODUCT_BUNDLE_IDENTIFIER`, and `update_app_identifier` reads
-`CFBundleIdentifier` from the plist to decide what to do - but
-`ownCloud Action Extension/Info.plist` does not define that key at this Pin
-(its only CFBundle* keys are Icons, PrimaryIcon, SymbolName, DisplayName),
-so the action silently skipped it. The lane now sets
-`PRODUCT_BUNDLE_IDENTIFIER` per target with Xcodeproj after upstream's
-calls, and fails if a mapped target name is missing - check that map on
-every Bump.
-
-Related: two log traps found in the same run. `xcodebuild | tee` blew
-GitLab's 4 MB job-log cap and truncated the job before the error was
-visible (log to a file, print errors on failure, ship the log as an
-artifact), and `ensure_xcode_version` needs the abandoned `xcode-install`
-gem, which is not in the Pin's Gemfile.
-
-## Apple bootstrap, as it actually went (2026-08-27)
-
-`bundle exec fastlane ios aity_bootstrap_apple` on the `macos` runner:
-
-- 14 App IDs created (7 targets x 2 Environments), APP_GROUPS on all,
-  ASSOCIATED_DOMAINS on the two parent apps.
-- Team ID discovered from a bundle id's `seedId`: **Z3C9R3AHZ8** (now the
-  protected group variable `AITY_TEAM_ID`). Nobody has to look it up.
-- Distribution certificate R3FZ83C73U + 12 AppStore profiles created and
-  pushed to `drive/certificates` on branch **master** (match's default).
-- **App records cannot be created by API.** Apple answers
-  `The resource 'apps' does not allow 'CREATE'`; only GET_COLLECTION,
-  GET_INSTANCE and UPDATE. The lane reports the exact records to add by
-  hand and continues - uploads fail until they exist.
-
-App groups (`group.tech.aity.drive`, `group.tech.aity.drive.staging`) are
-also outside the API. If a signed build fails on a missing
-application-groups entitlement, create and associate them in the portal.
-
-## The app icon comes from AppIcon.icon, not AppIcon.appiconset (2026-08-27)
-
-Build 18 shipped with ownCloud's own app icon even though the lane
-generated a full AppIcon.appiconset from our brand mark. Xcode 26 prefers
-the Icon Composer asset when one exists, and the Pin ships
-`ownCloud/Resources/AppIcon.icon` (owncloud-logo.svg on ownCloud blue,
-referenced four times in project.pbxproj). Proof, from unpacking the
-uploaded IPA: `Assets.car` contains `AppIcon_Assets/owncloud-logo` plus
-the Icon Composer appearance variants; our appiconset was compiled and
-ignored.
-
-`scripts/generate-assets.py` now writes an `AppIcon.icon` per Environment -
-same directory and icon.json path as upstream, so the project's file
-references stay valid - with a white fill and our finished icon as the
-single layer. The appiconset is still generated (harmless, and it is what
-older toolchains would use). On a Bump, check whether upstream changed the
-Icon Composer manifest schema.
-
-Related, same day: the in-app `branding-logo.png` and
-`branding-splashscreen-logo.png` were transparent, so the mark vanished on
-any non-white surface; both are opaque white now. The sidebar link icon
-stays transparent on purpose.
-
-## De-branding: upstream's trademark outlives Branding.plist (2026-08-27)
-
-The GPL gives us the code, not ownCloud's name, and the Pin leaves the
-name in places no branding key reaches. Build 18, unpacked, carried:
-
-- `Save to ownCloud` / `Share to ownCloud` in the iOS share sheet - these
-  come from `APP_PRODUCT_NAME`, upstream's OWN branding hook, which
-  defaults to `ownCloud`. Now set per target in `aity_apply_identity`.
-- `Use ownCloud actions in Shortcuts.` translated into 23 languages.
-- 140 translated strings inside `ownCloudSDK.framework` ("... is not an
-  ownCloud instance").
-- `CFBundleURLName` = `com.owncloud.com` / `.auth`.
-- The app icon itself (see the Icon Composer entry above).
-
-`scripts/debrand-strings.py` rewrites user-visible VALUES only - keys are
-lookup identifiers, and rewriting them makes the UI show raw keys - across
-`.strings`, `.stringsdict` and `Info.plist`, in both the legacy
-`"k" = "v";` syntax and plist form. Two traps it taught us: the script's
-own `/build/` exclusion made a CI run report `rewrote 0 values` while the
-SDK stayed dirty (the materialised tree lives under `build/`), and the
-tree path must come from `__dir__`, not `Dir.pwd`.
-
-Left deliberately: bundle/executable/framework/class names (`ownCloud.app`,
-`ownCloudSDK.framework`, `OC*`). They are the upstream software's internal
-component names, never shown to a user, and renaming `PRODUCT_NAME` would
-touch the whole project. Raul's call if that changes.
+Lesson worth keeping: an unsigned simulator build is NOT a faithful
+approximation of the shipped app. Anything that touches app groups,
+keychain groups or File Provider behaves differently, and it fails as an
+assert rather than a diagnosable error.
 
