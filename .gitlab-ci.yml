@@ -128,6 +128,16 @@ bootstrap:apple:
     paths:
       - apple-team-id.txt
 
+# One-time: internal tester group + testers + newest build attached.
+setup:testflight-internal:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_setup_testflight_internal
+
 # Read-only diagnostic: what TestFlight has and who can see it.
 check:testflight:
   extends: .macos

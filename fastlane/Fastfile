@@ -597,6 +597,67 @@ platform :ios do
     end
   end
 
+  desc "Create the internal tester group and put every App Store Connect"
+  desc "user in it, then attach the newest build. Without a group, TestFlight"
+  desc "has nobody to show a build to - which is exactly what happened."
+  lane :aity_setup_testflight_internal do
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8])
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      filepath: File.absolute_path(ENV.fetch("ASC_KEY_P8"))
+    )
+
+    group_name = ENV["AITY_TF_INTERNAL_GROUP"] || "Aity Internal"
+
+    # Internal testers must be App Store Connect users; ask Apple who those
+    # are rather than hardcoding an address.
+    users = Spaceship::ConnectAPI::User.all
+    UI.message("App Store Connect users: #{users.map(&:email).join(', ')}")
+
+    AITY_IDENTITY.each_key do |env|
+      identifier = aity_ids(env)[:app]
+      app = Spaceship::ConnectAPI::App.find(identifier)
+      next UI.error("#{identifier}: no App Store Connect record") if app.nil?
+
+      group = app.get_beta_groups.find { |candidate| candidate.name == group_name }
+      if group.nil?
+        group = Spaceship::ConnectAPI::BetaGroup.create(
+          app_id: app.id, name: group_name, is_internal_group: true
+        )
+        UI.success("#{identifier}: created internal group '#{group_name}'")
+      else
+        UI.message("#{identifier}: internal group '#{group_name}' exists")
+      end
+
+      users.each do |user|
+        Spaceship::ConnectAPI::BetaTester.create(
+          beta_group_id: group.id,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name
+        )
+        UI.success("  + #{user.email}")
+      rescue StandardError => e
+        UI.message("  #{user.email}: #{e.message.to_s.split("\n").first}")
+      end
+
+      build = app.get_builds(limit: 5).find { |candidate| candidate.processing_state == "VALID" }
+      if build.nil?
+        UI.important("  no VALID build to attach yet")
+      else
+        begin
+          build.add_beta_groups(beta_groups: [group])
+          UI.success("  build #{build.version} attached to '#{group_name}'")
+        rescue StandardError => e
+          UI.important("  could not attach build #{build.version}: #{e.message.to_s.split("\n").first}")
+        end
+      end
+    end
+
+    UI.success("Open TestFlight on the device signed in with one of those Apple IDs.")
+  end
+
   desc "Read-only: what TestFlight actually has - builds, their processing"
   desc "state, and which tester groups exist. Answers 'why is it not on my"
   desc "phone' without guessing."
