@@ -5,6 +5,10 @@
 # The store is bootstrapped ONCE by hand from a Mac
 # (publisher-accounts.md step 2.6); CI is readonly.
 git_url(ENV["MATCH_GIT_URL"] || "git@gitlab.com:aity-cloud/drive/certificates.git")
+# match writes to its own branch in that repo. Its default is `master`,
+# which is where the store actually landed on 2026-08-27 - stated here so
+# nobody concludes from an almost-empty `main` that the store is unused.
+git_branch(ENV["MATCH_GIT_BRANCH"] || "master")
 storage_mode("git")
 type("appstore")
 readonly(true)

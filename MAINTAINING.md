@@ -137,3 +137,22 @@ visible (log to a file, print errors on failure, ship the log as an
 artifact), and `ensure_xcode_version` needs the abandoned `xcode-install`
 gem, which is not in the Pin's Gemfile.
 
+## Apple bootstrap, as it actually went (2026-08-27)
+
+`bundle exec fastlane ios aity_bootstrap_apple` on the `macos` runner:
+
+- 14 App IDs created (7 targets x 2 Environments), APP_GROUPS on all,
+  ASSOCIATED_DOMAINS on the two parent apps.
+- Team ID discovered from a bundle id's `seedId`: **Z3C9R3AHZ8** (now the
+  protected group variable `AITY_TEAM_ID`). Nobody has to look it up.
+- Distribution certificate R3FZ83C73U + 12 AppStore profiles created and
+  pushed to `drive/certificates` on branch **master** (match's default).
+- **App records cannot be created by API.** Apple answers
+  `The resource 'apps' does not allow 'CREATE'`; only GET_COLLECTION,
+  GET_INSTANCE and UPDATE. The lane reports the exact records to add by
+  hand and continues - uploads fail until they exist.
+
+App groups (`group.tech.aity.drive`, `group.tech.aity.drive.staging`) are
+also outside the API. If a signed build fails on a missing
+application-groups entitlement, create and associate them in the portal.
+
