@@ -179,3 +179,30 @@ Related, same day: the in-app `branding-logo.png` and
 any non-white surface; both are opaque white now. The sidebar link icon
 stays transparent on purpose.
 
+## De-branding: upstream's trademark outlives Branding.plist (2026-08-27)
+
+The GPL gives us the code, not ownCloud's name, and the Pin leaves the
+name in places no branding key reaches. Build 18, unpacked, carried:
+
+- `Save to ownCloud` / `Share to ownCloud` in the iOS share sheet - these
+  come from `APP_PRODUCT_NAME`, upstream's OWN branding hook, which
+  defaults to `ownCloud`. Now set per target in `aity_apply_identity`.
+- `Use ownCloud actions in Shortcuts.` translated into 23 languages.
+- 140 translated strings inside `ownCloudSDK.framework` ("... is not an
+  ownCloud instance").
+- `CFBundleURLName` = `com.owncloud.com` / `.auth`.
+- The app icon itself (see the Icon Composer entry above).
+
+`scripts/debrand-strings.py` rewrites user-visible VALUES only - keys are
+lookup identifiers, and rewriting them makes the UI show raw keys - across
+`.strings`, `.stringsdict` and `Info.plist`, in both the legacy
+`"k" = "v";` syntax and plist form. Two traps it taught us: the script's
+own `/build/` exclusion made a CI run report `rewrote 0 values` while the
+SDK stayed dirty (the materialised tree lives under `build/`), and the
+tree path must come from `__dir__`, not `Dir.pwd`.
+
+Left deliberately: bundle/executable/framework/class names (`ownCloud.app`,
+`ownCloudSDK.framework`, `OC*`). They are the upstream software's internal
+component names, never shown to a user, and renaming `PRODUCT_NAME` would
+touch the whole project. Raul's call if that changes.
+

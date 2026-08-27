@@ -130,7 +130,10 @@ def main() -> None:
     total_values = 0
     for pattern in ("**/*.strings", "**/*.stringsdict", "**/Info.plist"):
         for path in tree.glob(pattern):
-            if "/build/" in str(path) or "/.git/" in str(path):
+            # No "/build/" skip here: the materialised tree IS under build/,
+            # and that filter silently made a CI run rewrite 0 files while
+            # the SDK framework kept 140 translated ownCloud strings.
+            if "/.git/" in str(path):
                 continue
             count = process(path, app_name, bundle_id)
             if count:

@@ -262,7 +262,10 @@ platform :ios do
     # localised UI strings ("Use ownCloud actions in Shortcuts." shipped in
     # 23 languages) and Info.plist display names. The GPL gives us the code,
     # not the name - strip it from every user-visible VALUE.
-    sh "python3 '#{File.join(FACTORY_ROOT, 'scripts/debrand-strings.py')}' '#{File.expand_path('..', Dir.pwd)}' '#{app_name}' '#{ids[:app]}'"
+    # __dir__ is <tree>/fastlane whatever the cwd is, so the tree is its
+    # parent - deriving it from Dir.pwd got this wrong once already.
+    tree = File.expand_path("..", __dir__)
+    sh "python3 '#{File.join(FACTORY_ROOT, 'scripts/debrand-strings.py')}' '#{tree}' '#{app_name}' '#{ids[:app]}'"
 
     # Upstream: app group + keychain access group in every entitlements
     # file. The keychain group is Team-ID-prefixed; without a team (the
