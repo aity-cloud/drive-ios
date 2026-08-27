@@ -722,11 +722,29 @@ platform :ios do
       end
       groups.each do |group|
         testers = begin
-          group.get_beta_testers.length
-        rescue StandardError
-          "?"
+          group.get_beta_testers.map(&:email)
+        rescue StandardError => e
+          ["<unreadable: #{e.class}>"]
         end
-        UI.message("  group '#{group.name}' internal=#{group.is_internal_group} testers=#{testers}")
+        UI.message("  group '#{group.name}' internal=#{group.is_internal_group} testers=#{testers.join(', ')}")
+      end
+
+      # The bit that decides whether anything appears on a phone: is the
+      # newest build actually ASSIGNED to a group? A group with no build and
+      # a build in no group both look fine in isolation.
+      newest = builds.find { |candidate| candidate.processing_state == "VALID" && !candidate.expired }
+      if newest
+        assigned = begin
+          Spaceship::ConnectAPI.client.get("builds/#{newest.id}/betaGroups")
+                                .to_models.map { |group| group.name }
+        rescue StandardError => e
+          ["<unreadable: #{e.class}>"]
+        end
+        if assigned.empty?
+          UI.important("  build #{newest.version} is in NO group - that is why TestFlight shows nothing")
+        else
+          UI.success("  build #{newest.version} is in: #{assigned.join(', ')}")
+        end
       end
     end
   end
