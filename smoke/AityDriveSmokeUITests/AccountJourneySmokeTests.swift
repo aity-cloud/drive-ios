@@ -410,16 +410,25 @@ final class AccountJourneySmokeTests: XCTestCase {
 	private func waitForCell(_ app: XCUIApplication, named name: String, timeout: TimeInterval,
 	                         openingSpaceNamed spaceName: String) -> Bool {
 		let deadline = Date().addingTimeInterval(timeout)
-		var opened = false
 		var lastTrace = Date.distantPast
+		var lastTap = Date.distantPast
 		while Date() < deadline {
 			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
-			if !opened {
-				let entry = app.staticTexts[spaceName].firstMatch
-				if entry.exists && entry.isHittable {
-					trace("opening the personal space '\(spaceName)' from the overview")
-					entry.tap()
-					opened = true
+
+			// On a phone the split view is collapsed, so after login the app
+			// shows the account SIDEBAR (the space, Spaces, Shares, Recents,
+			// ...) and the file list is one push away. Tap the space's CELL,
+			// not the first static text with its name: the account header
+			// repeats that name and is the first match. Retried rather than
+			// tapped once, because the first tap can land while the sidebar is
+			// still assembling and be swallowed.
+			if Date().timeIntervalSince(lastTap) > 15 {
+				let row = cell(app, named: spaceName)
+				let target = row.exists ? row : app.staticTexts[spaceName].firstMatch
+				if target.exists && target.isHittable {
+					trace("opening the personal space '\(spaceName)' from the sidebar")
+					target.tap()
+					lastTap = Date()
 				}
 			}
 			// Without this, a run that never finds the file spends three
