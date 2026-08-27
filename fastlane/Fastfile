@@ -466,9 +466,9 @@ platform :ios do
   # Public lanes
   # ---------------------------------------------------------------------
 
-  desc "Unsigned simulator build of the materialised Environment plus the"
-  desc "XCUITest smokes (login screen, and the account journey against"
-  desc "staging). Needs no Apple account (CODE_SIGNING_ALLOWED=NO); needs"
+  desc "Ad-hoc signed simulator build of the materialised Environment plus"
+  desc "the XCUITest smokes (login screen, and the account journey against"
+  desc "staging). Needs no Apple account (ad-hoc identity); needs"
   desc "Xcode, a simulator runtime and xcodegen (Brewfile)."
   lane :build_simulator_smoke do
     env = aity_environment
@@ -502,7 +502,17 @@ platform :ios do
          "-destination 'generic/platform=iOS Simulator' " \
          "-derivedDataPath '#{derived_data}' -quiet " \
          "ARCHS=$(uname -m) ONLY_ACTIVE_ARCH=NO " \
-         "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' " \
+         # AD-HOC SIGNED, not unsigned. CODE_SIGNING_ALLOWED=NO strips the
+         # entitlements, so the app-group container does not exist, and
+         # connecting an account walks into
+         # NSFileProviderManager.documentStorageURL -> NSAssert -> SIGABRT
+         # (crash report read 2026-08-27: OCVault storageRootURL, called
+         # from AccountConnection.startFPServiceStandbyIfNotRunning). The
+         # simulator honours entitlements from an ad-hoc signature and
+         # needs no Apple account, so the smoke now exercises the same
+         # container layout a real build has.
+         "CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='-' " \
+         "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='' " \
          "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' > xcodebuild-simulator.log 2>&1 || " \
          "{ echo '--- error lines ---'; grep -nE 'error:|BUILD FAILED|The following build commands failed' xcodebuild-simulator.log | tail -40; " \
          "echo '--- last 120 lines ---'; tail -120 xcodebuild-simulator.log; exit 1; }"
