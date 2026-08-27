@@ -224,9 +224,12 @@ t = 14.49s  Tap "Personal"                   (opens the personal space)
 t = 21.78s  ... unexpected termination of tech.aity.drive.staging
 ```
 
-Not every run: the same build got through the same taps and listed the files
-in the run before. So it is a race, not a deterministic crash, and it is on
-the app's side - the test does nothing but tap and read after that point.
+Every run of the measurement, at the same point: tap "Personal", about six
+seconds later the app is gone. Not quite deterministic though - one earlier
+run (16149784314) survived the identical taps, listed the files and got as
+far as the "+" button - so it is a race rather than a hard crash on that
+code path. It is on the app's side either way: the test does nothing but tap
+and read after that point.
 
 What this means for the smoke: `AccountJourneySmokeTests` has NOT had a fully
 green run. Measured with `measure:smoke-flakiness` (job 16150229491,
