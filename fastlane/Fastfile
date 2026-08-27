@@ -655,11 +655,16 @@ platform :ios do
       ids = aity_ids(env)
       [ids[:app], ids[:fileprovider], ids[:fileprovider_ui], ids[:intents], ids[:share], ids[:action]]
     end
+    # AITY_MATCH_FORCE=true regenerates every profile even when one already
+    # exists. Needed after an App ID gains a capability - a profile minted
+    # before the App Group existed does not carry it, and Xcode rejects the
+    # build with "doesn't support the group.* App Group" (2026-08-27).
     match(
       type: "appstore",
       app_identifier: all_signed,
       team_id: team_id,
       readonly: false,
+      force: ENV["AITY_MATCH_FORCE"] == "true",
       api_key: api_key
     )
 
@@ -673,6 +678,14 @@ platform :ios do
     end
 
     UI.success("Bootstrap complete. Set AITY_TEAM_ID=#{team_id} as a protected group variable, then the publish lanes can run.")
-    UI.important("App groups: #{aity_ids('production')[:group]} and #{aity_ids('staging')[:group]} must exist in the Developer Portal and be associated with every App ID above - the App Store Connect API cannot manage app groups, so create/associate them by hand if signing complains about a missing entitlement.")
+    UI.important("")
+    UI.important("APP GROUPS - the other thing Apple's API cannot do:")
+    UI.important("  #{aity_ids('production')[:group]} and #{aity_ids('staging')[:group]}")
+    UI.important("  must exist under Identifiers > App Groups AND be ticked on every")
+    UI.important("  App ID above (Identifiers > <id> > App Groups > Configure).")
+    UI.important("  Until then a signed build fails with \"doesn't support the")
+    UI.important("  group.* App Group\". After fixing it, re-run this job with")
+    UI.important("  AITY_MATCH_FORCE=true so the profiles are regenerated WITH the")
+    UI.important("  group - existing profiles do not pick it up on their own.")
   end
 end
