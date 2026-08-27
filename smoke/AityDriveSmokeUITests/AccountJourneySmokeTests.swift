@@ -438,6 +438,12 @@ final class AccountJourneySmokeTests: XCTestCase {
 		var connectedAccount = false
 		var openedSpace = false
 		while Date() < deadline {
+			// Every query throws "Lost connection to the application" the
+			// instant the app dies, from wherever the loop happens to be. Stop
+			// on the state instead, so the caller can report the crash as a
+			// crash (see "The app terminates after opening the personal space"
+			// in MAINTAINING.md).
+			guard app.state == .runningForeground else { return false }
 			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
 
 			// On a phone the split view is collapsed, so after login the app
