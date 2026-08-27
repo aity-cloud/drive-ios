@@ -395,7 +395,11 @@ platform :ios do
       # four lines above a failure that had nothing to do with the code).
       # xcpretty is in the Gemfile for that reason; keeping the formatter
       # also keeps the console output under GitLab's 4 MB job-log cap.
-      xcodebuild_formatter: "xcpretty",
+      # Through bundler, not bare: gym shells out `xcodebuild ... | <formatter>`
+      # and that sh does not see the bundle's bin dir, so a bare `xcpretty`
+      # is "command not found" even with the gem installed (verified twice,
+      # 2026-08-27 - the gem was in the bundle both times).
+      xcodebuild_formatter: "bundle exec xcpretty",
       # ...and the unformatted transcript lands in the workspace, shipped as
       # a job artifact, so the next failure is diagnosable without a re-run.
       buildlog_path: "gym-logs",
