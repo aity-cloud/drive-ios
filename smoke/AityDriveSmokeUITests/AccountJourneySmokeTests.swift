@@ -418,20 +418,25 @@ final class AccountJourneySmokeTests: XCTestCase {
 			// On a phone the split view is collapsed, so after login the app
 			// shows the account SIDEBAR and the file list is one push away.
 			//
-			// The row to tap is the one labelled "Personal" - the app's own
-			// word for the personal space. NOT the space's server name
-			// ("Drive Contract", the user's display name): that appears in the
+			// The row to tap is the one the app labels "Personal", and ONLY
+			// that one. The space's server name ("Drive Contract" - on oCIS
+			// the personal space is named after the user) belongs to the
 			// ACCOUNT HEADER, whose cell also carries an "eject" button that
-			// disconnects the account. Tapping that header is what made an
-			// earlier run end with the app no longer running.
+			// disconnects the account; tapping it is what ended two earlier
+			// runs with the app no longer running. `spaceName` is kept for the
+			// failure message only.
 			if Date().timeIntervalSince(lastTap) > 15 {
-				let target = [app.staticTexts["Personal"].firstMatch,
-				              app.buttons["Personal"].firstMatch,
-				              app.staticTexts[spaceName].firstMatch]
-					.first { $0.exists && $0.isHittable }
-				if let target {
-					trace("opening the personal space from the sidebar (\(target.label))")
+				let candidates = [app.staticTexts["Personal"].firstMatch,
+				                  app.buttons["Personal"].firstMatch,
+				                  app.cells.staticTexts["Personal"].firstMatch]
+				if let target = candidates.first(where: { $0.exists && $0.isHittable }) {
+					trace("opening the personal space from the sidebar")
 					target.tap()
+					lastTap = Date()
+				} else if candidates.contains(where: { $0.exists }) {
+					// Present but below the fold: the sidebar scrolls.
+					trace("'Personal' is in the sidebar but not hittable - scrolling")
+					app.swipeUp()
 					lastTap = Date()
 				}
 			}
@@ -479,10 +484,16 @@ final class AccountJourneySmokeTests: XCTestCase {
 	}
 
 	private func hierarchy(_ app: XCUIApplication) -> String {
-		"visible labels: \(visibleLabels(app))\n\n" + String(app.debugDescription.prefix(8_000))
+		// Every query against a dead app throws, which replaces the real
+		// failure with "Application is not running" repeated forever.
+		guard app.wait(for: .runningForeground, timeout: 5) else {
+			return "the app is NOT RUNNING - it terminated during the journey"
+		}
+		return "visible labels: \(visibleLabels(app))\n\n" + String(app.debugDescription.prefix(8_000))
 	}
 
 	private func attach(_ app: XCUIApplication, named name: String) {
+		guard app.wait(for: .runningForeground, timeout: 5) else { return }
 		let screenshot = XCTAttachment(screenshot: app.screenshot())
 		screenshot.name = name
 		screenshot.lifetime = .keepAlways
