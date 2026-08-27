@@ -88,9 +88,21 @@ platform :ios do
     app_name = AITY_IDENTITY[env][:app_name]
     team_id = options[:team_id] # nil for the unsigned simulator build
 
-    # Upstream: Xcode version guard from .xcode-version.
+    # Upstream: Xcode version guard from .xcode-version. Upstream calls
+    # fastlane's `ensure_xcode_version`, which is implemented on top of the
+    # `xcode-install` gem - abandoned upstream in favour of `xcodes`, absent
+    # from the Pin's Gemfile, and therefore an immediate hard failure
+    # ("Add 'gem \"xcode-install\"' to your Gemfile") the moment the lane
+    # first ran on a real Mac (2026-08-27, three runs, nothing else reached).
+    # Same guard, same fail-fast intent, no dead dependency: compare the
+    # Pin's pin against what xcodebuild actually reports.
     if File.exist?("../.xcode-version")
-      ensure_xcode_version(version: File.read("../.xcode-version").strip)
+      want = File.read("../.xcode-version").strip
+      have = `xcodebuild -version`.lines.first.to_s.strip.sub(/\AXcode\s+/, "")
+      unless have == want || have.start_with?("#{want}.")
+        UI.user_error!("Xcode #{want} is required by the Pin's .xcode-version, but xcodebuild reports #{have.empty? ? '(nothing - Command Line Tools only?)' : have}. Install and select it: `xcodes install #{want} --select`, or point DEVELOPER_DIR at it.")
+      end
+      UI.message("Xcode #{have} satisfies the Pin's .xcode-version (#{want})")
     end
 
     UI.user_error!("#{THEME_PLIST} missing - materialize did not lay the overlay") unless File.exist?("../" + THEME_PLIST)
