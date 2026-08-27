@@ -70,9 +70,10 @@ final class AccountJourneySmokeTests: XCTestCase {
 		let token = try XCTContext.runActivity(named: "Get a harness token (password grant, client `drive`)") { _ in
 			try server.token()
 		}
-		let space = try XCTContext.runActivity(named: "Resolve the personal space WebDAV URL") { _ in
-			try server.personalSpaceWebDAVURL(token: token)
+		let personal = try XCTContext.runActivity(named: "Resolve the personal space") { _ in
+			try server.personalSpace(token: token)
 		}
+		let space = personal.webDAVURL
 		_ = try XCTContext.runActivity(named: "Seed \(seededFile) into the personal space") { _ in
 			try server.putFile(named: seededFile, contents: "aity drive ios smoke \(runID)\n",
 			                   inSpace: space, token: token)
@@ -103,7 +104,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		// --- The actual assertion of Tier 2: the app shows content that came
 		// from the server, not just a screen that finished loading.
 		XCTAssertTrue(
-			waitForCell(app, named: seededFile, timeout: 180),
+			waitForCell(app, named: seededFile, timeout: 180, openingSpaceNamed: personal.name),
 			"'\(seededFile)' was put into the personal space over WebDAV before launch but never " +
 			"appeared in the app's file list. Either the account did not open, or the list is not " +
 			"the personal space.\n\n\(hierarchy(app))"
@@ -400,6 +401,29 @@ final class AccountJourneySmokeTests: XCTestCase {
 		eventually(timeout: timeout) {
 			app.staticTexts[name].exists || self.cell(app, named: name).exists
 		}
+	}
+
+	/// Same, but opens the personal space first if the app landed on the
+	/// account/spaces overview instead of inside it. The space's name is the
+	/// user's DISPLAY NAME on oCIS, not the word "Personal", so it is read from
+	/// `/graph/v1.0/me/drives` rather than guessed.
+	private func waitForCell(_ app: XCUIApplication, named name: String, timeout: TimeInterval,
+	                         openingSpaceNamed spaceName: String) -> Bool {
+		let deadline = Date().addingTimeInterval(timeout)
+		var opened = false
+		while Date() < deadline {
+			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
+			if !opened {
+				let entry = app.staticTexts[spaceName].firstMatch
+				if entry.exists && entry.isHittable {
+					trace("opening the personal space '\(spaceName)' from the overview")
+					entry.tap()
+					opened = true
+				}
+			}
+			usleep(1_000_000)
+		}
+		return app.staticTexts[name].exists || cell(app, named: name).exists
 	}
 
 	// MARK: - Diagnostics

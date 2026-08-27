@@ -547,70 +547,86 @@ platform :ios do
     # anybody wrote.
     repeat = (ENV["AITY_SMOKE_REPEAT"] || "1").to_i
     repeat = 1 if repeat < 1
-    only = ENV["AITY_SMOKE_TESTS"].to_s   # e.g. AityDriveSmokeUITests/AccountJourneySmokeTests
+
+    # One xcodebuild invocation PER TEST CLASS, each with a fresh install.
+    # LoginScreenSmokeTests asserts the FIRST-RUN screen, so it cannot follow
+    # the account journey in the same run: the journey leaves the app signed
+    # in and the wizard never appears again. Running them together reported
+    # the login-screen smoke as broken when it was not (2026-08-27).
+    suites = ENV["AITY_SMOKE_TESTS"].to_s.split(",").map(&:strip).reject(&:empty?)
+    suites = [
+      "AityDriveSmokeUITests/LoginScreenSmokeTests",
+      "AityDriveSmokeUITests/AccountJourneySmokeTests"
+    ] if suites.empty?
     results = []
 
     repeat.times do |attempt|
       run = attempt + 1
-      log = "xcodebuild-smoke-#{run}.log"
-      result_bundle = File.join(FACTORY_ROOT, "build", "smoke-results", "run-#{run}.xcresult")
-      sh "rm -rf '#{result_bundle}'"
-      sh "mkdir -p '#{File.dirname(result_bundle)}'"
+      run_green = true
+      suites.each do |suite|
+        suite_slug = suite.split("/").last
+        log = "xcodebuild-smoke-#{run}-#{suite_slug}.log"
+        result_bundle = File.join(FACTORY_ROOT, "build", "smoke-results", "run-#{run}-#{suite_slug}.xcresult")
+        sh "rm -rf '#{result_bundle}'"
+        sh "mkdir -p '#{File.dirname(result_bundle)}'"
 
-      sh "xcrun simctl uninstall '#{sim_name}' '#{ids[:app]}' || true"
-      sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
+        sh "xcrun simctl uninstall '#{sim_name}' '#{ids[:app]}' || true"
+        sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
 
-      # Same log discipline as the build above: file, not console. NOT
-      # -quiet either: -quiet suppresses the assertion messages, so a failed
-      # run leaves nothing but "** TEST FAILED **" and the detail exists only
-      # inside the .xcresult, which needs a Mac to read.
-      #
-      # Built as an ARRAY, not a backslash-continued string: a `#` comment
-      # inside a `"..." \` continuation silently ENDS the expression in Ruby,
-      # and the truncated command was `set -o pipefail; VAR=... VAR=...` - an
-      # assignment-only line that exits 0 without running anything. That
-      # reported a green smoke that had never run a test (2026-08-27). Hence
-      # also the two guards below.
-      command = [
-        "set -o pipefail;",
-        "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}'",
-        "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}'",
-        "TEST_RUNNER_AITY_DRIVE_URL='#{drive_url}'",
-        "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}'",
-        "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}'",
-        "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}'",
-        "xcodebuild test",
-        "-project '#{smoke_dir}/AityDriveSmoke.xcodeproj'",
-        "-scheme AityDriveSmokeUITests",
-        "-resultBundlePath '#{result_bundle}'",
-        (only.empty? ? nil : "-only-testing:#{only}"),
-        "-destination 'platform=iOS Simulator,name=#{sim_name}'",
-        "> #{log} 2>&1"
-      ].compact.join(" ")
-      passed = system(command)
+        # Same log discipline as the build above: file, not console. NOT
+        # -quiet either: -quiet suppresses the assertion messages, so a failed
+        # run leaves nothing but "** TEST FAILED **" and the detail exists only
+        # inside the .xcresult, which needs a Mac to read.
+        #
+        # Built as an ARRAY, not a backslash-continued string: a `#` comment
+        # inside a `"..." \` continuation silently ENDS the expression in Ruby,
+        # and the truncated command was `set -o pipefail; VAR=... VAR=...` - an
+        # assignment-only line that exits 0 without running anything. That
+        # reported a green smoke that had never run a test (2026-08-27). Hence
+        # also the two guards below.
+        command = [
+          "set -o pipefail;",
+          "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}'",
+          "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}'",
+          "TEST_RUNNER_AITY_DRIVE_URL='#{drive_url}'",
+          "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}'",
+          "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}'",
+          "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}'",
+          "xcodebuild test",
+          "-project '#{smoke_dir}/AityDriveSmoke.xcodeproj'",
+          "-scheme AityDriveSmokeUITests",
+          "-resultBundlePath '#{result_bundle}'",
+          "-only-testing:#{suite}",
+          "-destination 'platform=iOS Simulator,name=#{sim_name}'",
+          "> #{log} 2>&1"
+        ].compact.join(" ")
+        passed = system(command)
 
-      # A run that produced no transcript and no result bundle did not happen,
-      # whatever its exit status was. Never report that as green.
-      log_path = File.expand_path(log)
-      unless File.exist?(log_path) && File.exist?(result_bundle)
-        UI.user_error!(
-          "xcodebuild test exited #{passed ? 0 : 'non-zero'} but produced " \
-          "#{File.exist?(log_path) ? '' : 'no log'}#{File.exist?(result_bundle) ? '' : ' no result bundle'} - " \
-          "the test did not run. Command was:\n#{command}"
-        )
+        # A run that produced no transcript and no result bundle did not happen,
+        # whatever its exit status was. Never report that as green.
+        log_path = File.expand_path(log)
+        unless File.exist?(log_path) && File.exist?(result_bundle)
+          UI.user_error!(
+            "xcodebuild test exited #{passed ? 0 : 'non-zero'} but produced " \
+            "#{File.exist?(log_path) ? '' : 'no log'}#{File.exist?(result_bundle) ? '' : ' no result bundle'} - " \
+            "the test did not run. Command was:\n#{command}"
+          )
+        end
+
+        run_green &&= passed
+        unless passed
+          UI.error("--- smoke run #{run} failed, assertions ---")
+          sh "grep -nE 'error:|XCTAssert|Test Case .* failed|Failing tests|Assertion Failure' #{log} | tail -60 || true"
+          UI.error("--- last 120 lines ---")
+          sh "tail -120 #{log} || true"
+          # Belt and braces: the structured result, for the cases where the
+          # console transcript still says nothing useful.
+          sh "xcrun xcresulttool get test-results tests --path '#{result_bundle}' 2>/dev/null | head -200 || true"
+        end
+        UI.message("smoke run #{run}/#{repeat}, #{suite_slug}: #{passed ? 'PASS' : 'FAIL'}")
       end
-
-      results << passed
-      unless passed
-        UI.error("--- smoke run #{run} failed, assertions ---")
-        sh "grep -nE 'error:|XCTAssert|Test Case .* failed|Failing tests|Assertion Failure' #{log} | tail -60 || true"
-        UI.error("--- last 120 lines ---")
-        sh "tail -120 #{log} || true"
-        # Belt and braces: the structured result, for the cases where the
-        # console transcript still says nothing useful.
-        sh "xcrun xcresulttool get test-results tests --path '#{result_bundle}' 2>/dev/null | head -200 || true"
-      end
-      UI.message("smoke run #{run}/#{repeat}: #{passed ? 'PASS' : 'FAIL'}")
+      results << run_green
+      UI.message("smoke run #{run}/#{repeat}: #{run_green ? 'PASS' : 'FAIL'}")
     end
 
     green = results.count(true)

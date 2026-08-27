@@ -129,9 +129,17 @@ struct StagingServer {
 		return token
 	}
 
-	/// WebDAV URL of the personal space, as the SERVER advertises it. A client
-	/// follows what it is given, so the harness does too.
-	func personalSpaceWebDAVURL(token: String) throws -> URL {
+	struct PersonalSpace {
+		/// The name the app shows for the space in its sidebar. On oCIS this is
+		/// the user's display name, not the word "Personal", so the test has to
+		/// ask rather than guess.
+		let name: String
+		/// WebDAV URL, as the SERVER advertises it. A client follows what it is
+		/// given, so the harness does too.
+		let webDAVURL: URL
+	}
+
+	func personalSpace(token: String) throws -> PersonalSpace {
 		let (status, data) = try authorized("GET", baseURL.appendingPathComponent("graph/v1.0/me/drives"), token: token)
 		guard status == 200 else {
 			throw ServerError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -145,7 +153,7 @@ struct StagingServer {
 		      let webDAV = root["webDavUrl"] as? String, let url = URL(string: webDAV) else {
 			throw ServerError.malformed("no personal space with a webDavUrl in \(drives.count) drive(s)")
 		}
-		return url
+		return PersonalSpace(name: (personal["name"] as? String) ?? "Personal", webDAVURL: url)
 	}
 
 	@discardableResult
