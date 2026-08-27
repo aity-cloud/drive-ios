@@ -53,6 +53,10 @@ echo
 
 # atos wants a load address; the offsets from the report are relative to the
 # image base, so use 0 and let each offset be the address.
+# Offsets from a crash report are DECIMAL; atos reads a bare digit string as
+# HEX, so 272868 became 0x272868 and every frame resolved to nonsense (or to
+# nothing). Convert explicitly - this cost one wrong diagnosis on 2026-08-27.
 for off in "$@"; do
-  printf '  +%-9s %s\n' "$off" "$(atos -o "$BIN" -arch arm64 -l 0 "$off" 2>/dev/null || echo '(atos failed)')"
+  hex=$(printf '0x%x' "$off")
+  printf '  +%-9s (%s)  %s\n' "$off" "$hex" "$(atos -o "$BIN" -arch arm64 -l 0 "$hex" 2>/dev/null || echo '(atos failed)')"
 done
