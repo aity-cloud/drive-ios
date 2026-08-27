@@ -16,3 +16,6 @@ smoke/DerivedData/
 vendor/
 .DS_Store
 apple-team-id.txt
+
+# python bytecode from scripts/ (the lint job runs py_compile)
+__pycache__/

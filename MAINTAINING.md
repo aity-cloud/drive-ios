@@ -106,6 +106,95 @@ the date and what was found.
   `pip install cairosvg pillow` (a venv is fine) and a bold DejaVu or
   Liberation TTF for the STG badge.
 
+## Tier 2: how the OIDC login is driven (2026-08-27)
+
+`smoke/AityDriveSmokeUITests/AccountJourneySmokeTests.swift` signs in as the
+staging contract user, asserts a file that was seeded over WebDAV before
+launch shows up in the personal space, creates a folder from the app, deletes
+it again and leaves staging clean. The expensive question was step 2, and
+three cheaper routes were investigated first. All three are dead at this Pin,
+so nobody has to re-tread them:
+
+- **Reuse upstream's UI tests: there are none.** `ownCloudScreenshotsTests`
+  survives only as a scheme and one `Pods_ownCloudScreenshotsTests.framework`
+  file reference; `project.pbxproj` has no `com.apple.product-type.bundle.ui-testing`
+  target at all, and the only test sources in the tree are unit tests
+  (`ownCloudTests/Metadata`, `ownCloudAppTests`, `ownCloudAppFrameworkTests`).
+  There is no harness to inherit and no upstream UI coverage a Bump could
+  break.
+- **Pre-seed an account from Branding: no key does that.**
+  `bookmark.prepopulation` prepopulates the local DATABASE during setup
+  (`doNot` / `split` / `streaming`, `doc/configuration.adoc`), not the
+  account. The `branding.profile-*` keys lock the URL and skip the URL step,
+  which is exactly what they already do here; they cannot supply credentials.
+  Bookmarks live in `bookmarks.dat` (NSKeyedArchiver, app group container)
+  with the auth data in the keychain (`OCBookmarkAuthenticationDataStorageKeychain`),
+  so hand-writing one would be an archive-format dependency AND a simulator
+  keychain write - implementation coupling of the worst kind.
+- **Inject the callback URL: PKCE forbids it.** The app generates its own
+  code verifier, so a `code` obtained out-of-band is bound to the harness's
+  challenge and the app's token exchange fails. There is no way to hand the
+  app a code it can spend.
+
+So the browser sheet is driven, with the one setting that removes its worst
+part: `authentication.browser-session-prefers-ephermal`. An ephemeral
+`ASWebAuthenticationSession` skips the SpringBoard "wants to use ... to sign
+in" consent alert, and the SDK reads that key straight from class settings
+(`OCAuthenticationMethodOAuth2.m`, `webAuthenticationSession.prefersEphemeralWebBrowserSession`).
+
+**Every class setting can be set at launch without rebuilding**, which is the
+single most useful thing to know about testing this app:
+`OCClassSettings.sharedSettings` registers `OCClassSettingsFlatSourceEnvironment`
+with prefix `oc:`, so `app.launchEnvironment["oc:<flat.key>"] = "bool:true"`
+(also `string:`, `int:`, `[a,b]`, `{json}`) overrides anything the
+Branding.plist sets. XCUITest sets `launchEnvironment` on an app launched by
+bundle identifier too.
+
+Traps this cost, all confirmed against the real staging realm:
+
+- **The realm's browser flow is IDENTITY-FIRST.** Page 1 is `login-username`
+  (field `#username`, submit "Continue"), page 2 is `login` (field
+  `#password`, submit "Sign in"). Posting both at once silently redisplays
+  page 1 with no error message. The Android factory's test has the same two
+  screens for the same reason.
+- **The login page is a React app** (the Keycloakify `aity` theme), not
+  server-rendered HTML: nothing matches `<form id="kc-form-login">` in the
+  delivered markup, the form is built client-side from an embedded
+  `kcContext`. Scraping it needs `kcContext.url.loginAction`.
+- **The sheet's web content lives in `com.apple.SafariViewService`**, a
+  separate process, so the test queries both that bundle id and the app under
+  test and uses whichever has the fields.
+- **`UIWebView` is NOT an escape hatch.** `authentication.browser-session-class`
+  offers a `UIWebView` value, but it is `#if OC_FEATURE_AVAILABLE_UIWEBVIEW_BROWSER_SESSION`
+  (default 0) and the implementation is literally `UIWebView`, removed from
+  the iOS SDK long before Xcode 26. It cannot compile.
+- **`CustomScheme` is a real escape hatch but needs a Patch.** The documented
+  MDM route (AirWatch/MobileIron) hands the browser session to another app via
+  a custom scheme and takes the callback back through
+  `OCAuthenticationBrowserSessionCustomScheme.handleOpenURL:`. That class
+  method is never called anywhere in the app at this Pin, so a helper-app
+  based, fully deterministic login would need a Patch wiring it into the app's
+  URL handling. Worth remembering if the sheet ever proves too flaky.
+
+Operational notes for the lane:
+
+- **DerivedData moved out of the materialised tree.** `materialize.sh` runs
+  `git clean -fd` inside `build/upstream`, and upstream's `.gitignore` covers
+  `build/` but not `build-simulator`, so the old `-derivedDataPath ../build-simulator`
+  was deleted before every single build - every run was a cold compile of the
+  whole Pin on a MacBook Air. It is now `<factory>/build/derived-simulator`,
+  which survives and makes repeat runs incremental.
+- **Each repeat starts from a fresh install.** The lane uninstalls and
+  reinstalls between runs, because the account the previous run created lives
+  in the app group container and a second run that starts logged in is not the
+  test anyone wrote.
+- `AITY_SMOKE_REPEAT` (default 1) measures the pass rate,
+  `AITY_SMOKE_SKIP_BUILD=true` reuses the existing `.app`, `AITY_SMOKE_TESTS`
+  narrows to one class. The `measure:smoke-flakiness` job wires all three.
+- Without `AITY_CONTRACT_USER` / `AITY_CONTRACT_PASSWORD` the journey
+  `XCTSkip`s itself and the login-screen smoke still runs, so a workstation
+  without secrets gets a useful subset instead of a red run it cannot fix.
+
 ## Standing duties
 
 - **Every Bump: re-diff the Fastfile transcription** against upstream's

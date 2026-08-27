@@ -37,6 +37,15 @@ AITY_IDENTITY = {
   "staging" => { app_name: "Aity Drive (staging)", app_id: "tech.aity.drive.staging" }
 }.freeze
 
+# Where each Environment's realm lives (meta/specs/aity-drive-v1.md,
+# "Environments and channels"). The DRIVE url is deliberately NOT here: it is
+# read from the materialised Branding.plist so the smoke can never test a
+# different server than the build points at.
+AITY_ENVIRONMENT_ISSUERS = {
+  "production" => "https://auth.aity.tech/realms/aity",
+  "staging" => "https://auth.aity.works/realms/aity"
+}.freeze
+
 def aity_environment
   marker = File.expand_path("../.aity-environment", __dir__)
   unless File.exist?(marker)
@@ -458,37 +467,50 @@ platform :ios do
   # ---------------------------------------------------------------------
 
   desc "Unsigned simulator build of the materialised Environment plus the"
-  desc "XCUITest login-screen smoke. Needs no Apple account"
-  desc "(CODE_SIGNING_ALLOWED=NO); needs Xcode, a simulator runtime and"
-  desc "xcodegen (Brewfile)."
+  desc "XCUITest smokes (login screen, and the account journey against"
+  desc "staging). Needs no Apple account (CODE_SIGNING_ALLOWED=NO); needs"
+  desc "Xcode, a simulator runtime and xcodegen (Brewfile)."
   lane :build_simulator_smoke do
     env = aity_environment
     ids = aity_ids(env)
     identity_info = aity_apply_identity(team_id: nil, build_number: ENV["CI_PIPELINE_IID"])
 
-    derived_data = "../build-simulator"
-    # The full xcodebuild transcript goes to a FILE, never to the console:
-    # teeing it flooded GitLab's 4 MB job-log cap and truncated the run at
-    # "Job's log exceeded limit", so the actual error was unreadable
-    # (2026-08-27, first real run on the Mac runner). On failure we print the
-    # error lines and the tail, which is what a human needs anyway; the whole
-    # log ships as a job artifact either way.
-    # ARCHS is the host arch: the generic simulator destination otherwise
-    # builds arm64 AND x86_64, doubling a cold build for a slice no Apple
-    # Silicon simulator ever runs.
-    sh "set -o pipefail; xcodebuild build " \
-       "-project ../ownCloud.xcodeproj -scheme ownCloud -configuration Debug " \
-       "-destination 'generic/platform=iOS Simulator' " \
-       "-derivedDataPath #{derived_data} -quiet " \
-       "ARCHS=$(uname -m) ONLY_ACTIVE_ARCH=NO " \
-       "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' " \
-       "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' > xcodebuild-simulator.log 2>&1 || " \
-       "{ echo '--- error lines ---'; grep -nE 'error:|BUILD FAILED|The following build commands failed' xcodebuild-simulator.log | tail -40; " \
-       "echo '--- last 120 lines ---'; tail -120 xcodebuild-simulator.log; exit 1; }"
+    # DerivedData lives in the FACTORY, not in the materialised tree: every
+    # materialize.sh run does `git clean -fd` inside build/upstream, and
+    # upstream's .gitignore covers `build/` but not `build-simulator`, so a
+    # DerivedData directory in there is wiped before every single build. Out
+    # here it survives, which turns the second and later runs on the Mac from
+    # a full cold compile into an incremental one - the difference between
+    # measuring flakiness and monopolising Raul's laptop for an afternoon.
+    derived_data = File.join(FACTORY_ROOT, "build", "derived-simulator")
 
-    apps = Dir.glob("#{derived_data}/Build/Products/Debug-iphonesimulator/*.app")
-    UI.user_error!("Simulator build produced no .app under #{derived_data}") if apps.empty?
-    app_path = apps.first
+    app_path = Dir.glob("#{derived_data}/Build/Products/Debug-iphonesimulator/*.app").first
+    if app_path && ENV["AITY_SMOKE_SKIP_BUILD"] == "true"
+      UI.important("AITY_SMOKE_SKIP_BUILD=true - reusing #{app_path} without rebuilding")
+    else
+      # The full xcodebuild transcript goes to a FILE, never to the console:
+      # teeing it flooded GitLab's 4 MB job-log cap and truncated the run at
+      # "Job's log exceeded limit", so the actual error was unreadable
+      # (2026-08-27, first real run on the Mac runner). On failure we print the
+      # error lines and the tail, which is what a human needs anyway; the whole
+      # log ships as a job artifact either way.
+      # ARCHS is the host arch: the generic simulator destination otherwise
+      # builds arm64 AND x86_64, doubling a cold build for a slice no Apple
+      # Silicon simulator ever runs.
+      sh "set -o pipefail; xcodebuild build " \
+         "-project ../ownCloud.xcodeproj -scheme ownCloud -configuration Debug " \
+         "-destination 'generic/platform=iOS Simulator' " \
+         "-derivedDataPath '#{derived_data}' -quiet " \
+         "ARCHS=$(uname -m) ONLY_ACTIVE_ARCH=NO " \
+         "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' " \
+         "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' > xcodebuild-simulator.log 2>&1 || " \
+         "{ echo '--- error lines ---'; grep -nE 'error:|BUILD FAILED|The following build commands failed' xcodebuild-simulator.log | tail -40; " \
+         "echo '--- last 120 lines ---'; tail -120 xcodebuild-simulator.log; exit 1; }"
+
+      apps = Dir.glob("#{derived_data}/Build/Products/Debug-iphonesimulator/*.app")
+      UI.user_error!("Simulator build produced no .app under #{derived_data}") if apps.empty?
+      app_path = apps.first
+    end
     UI.success("Simulator app: #{app_path}")
 
     # Dedicated simulator: created on demand, reused across runs.
@@ -496,25 +518,85 @@ platform :ios do
     sim_device_type = ENV["AITY_SMOKE_DEVICE_TYPE"] || "com.apple.CoreSimulator.SimDeviceType.iPhone-16"
     sh "xcrun simctl list devices | grep -q '#{sim_name}' || xcrun simctl create '#{sim_name}' '#{sim_device_type}'"
     sh "xcrun simctl bootstatus '#{sim_name}' -b"
-    sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
 
     # The smoke XCUITest runner is a standalone xcodegen project in the
     # factory repo (smoke/); it launches the installed app by bundle id.
     smoke_dir = File.join(FACTORY_ROOT, "smoke")
     UI.user_error!("#{smoke_dir}/project.yml missing") unless File.exist?(File.join(smoke_dir, "project.yml"))
     sh "cd '#{smoke_dir}' && xcodegen generate"
-    # Same log discipline as the build above: file, not console.
-    sh "set -o pipefail; " \
-       "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}' " \
-       "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}' " \
-       "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
-       "-scheme AityDriveSmokeUITests -quiet " \
-       "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
-       "> xcodebuild-smoke.log 2>&1 || " \
-       "{ echo '--- error lines ---'; grep -nE 'error:|failed|Failing tests' xcodebuild-smoke.log | tail -40; " \
-       "echo '--- last 120 lines ---'; tail -120 xcodebuild-smoke.log; exit 1; }"
 
-    UI.success("Simulator smoke green for #{env} (#{ids[:app]})")
+    # The account journey needs the staging contract account. Absent, the
+    # journey test SKIPS itself (XCTSkip) and the login-screen smoke still
+    # runs - so a workstation without secrets gets a useful subset rather
+    # than a red run it cannot fix.
+    # The server under test is whatever the Overlay baked into the build.
+    drive_url = get_info_plist_value(path: THEME_PLIST, key: "branding.profile-url").to_s
+    UI.user_error!("branding.profile-url missing from Branding.plist") if drive_url.empty?
+    UI.message("Smoke target: #{drive_url} (realm #{AITY_ENVIRONMENT_ISSUERS[env]})")
+
+    contract_user = ENV["AITY_CONTRACT_USER"].to_s
+    contract_password = ENV["AITY_CONTRACT_PASSWORD"].to_s
+    if contract_user.empty? || contract_password.empty?
+      UI.important("AITY_CONTRACT_USER / AITY_CONTRACT_PASSWORD are not set - " \
+                   "the account journey will skip itself and only the login-screen smoke runs")
+    end
+
+    # Repeat runs measure flakiness. Each one starts from a FRESH install:
+    # the account the previous run created lives in the app group container,
+    # and a second run that finds itself already logged in is not the test
+    # anybody wrote.
+    repeat = (ENV["AITY_SMOKE_REPEAT"] || "1").to_i
+    repeat = 1 if repeat < 1
+    only = ENV["AITY_SMOKE_TESTS"].to_s   # e.g. AityDriveSmokeUITests/AccountJourneySmokeTests
+    results = []
+
+    repeat.times do |attempt|
+      run = attempt + 1
+      log = "xcodebuild-smoke-#{run}.log"
+      result_bundle = File.join(FACTORY_ROOT, "build", "smoke-results", "run-#{run}.xcresult")
+      sh "rm -rf '#{result_bundle}'"
+      sh "mkdir -p '#{File.dirname(result_bundle)}'"
+
+      sh "xcrun simctl uninstall '#{sim_name}' '#{ids[:app]}' || true"
+      sh "xcrun simctl install '#{sim_name}' '#{app_path}'"
+
+      # Same log discipline as the build above: file, not console.
+      command = "set -o pipefail; " \
+                "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}' " \
+                "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}' " \
+                "TEST_RUNNER_AITY_DRIVE_URL='#{drive_url}' " \
+                "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}' " \
+                "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}' " \
+                "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}' " \
+                "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
+                "-scheme AityDriveSmokeUITests -quiet " \
+                "-resultBundlePath '#{result_bundle}' " \
+                "#{only.empty? ? '' : "-only-testing:#{only} "}" \
+                "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
+                "> #{log} 2>&1"
+      passed = system(command)
+      results << passed
+      unless passed
+        UI.error("--- smoke run #{run} failed, error lines ---")
+        sh "grep -nE 'error:|failed|Failing tests' #{log} | tail -40 || true"
+        UI.error("--- last 120 lines ---")
+        sh "tail -120 #{log} || true"
+      end
+      UI.message("smoke run #{run}/#{repeat}: #{passed ? 'PASS' : 'FAIL'}")
+    end
+
+    green = results.count(true)
+    UI.message("smoke pass rate: #{green}/#{repeat}")
+    # A repeat run is a MEASUREMENT, not a gate: it reports the rate and only
+    # fails when nothing passed at all. A single run (the default, and what
+    # the pipeline uses) still fails on the first red.
+    if repeat == 1
+      UI.user_error!("Simulator smoke failed for #{env} (#{ids[:app]})") if green.zero?
+    elsif green.zero?
+      UI.user_error!("Simulator smoke failed all #{repeat} runs for #{env} (#{ids[:app]})")
+    end
+
+    UI.success("Simulator smoke #{green}/#{repeat} green for #{env} (#{ids[:app]})")
   end
 
   desc "Staging Environment IPA, uploaded to the TestFlight internal track"

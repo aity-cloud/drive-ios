@@ -93,6 +93,13 @@ lint:
     LC_ALL: en_US.UTF-8
     LANG: en_US.UTF-8
 
+# Tier 2. Two XCUITests against the staging build on the simulator:
+# the login-screen smoke (no network) and the ACCOUNT JOURNEY - sign in as
+# the contract user through the app's own OIDC browser sheet, see a file that
+# was seeded over WebDAV before launch, create a folder from the app, delete
+# it again, leave staging clean. AITY_CONTRACT_USER / AITY_CONTRACT_PASSWORD
+# are protected group variables; without them the journey skips itself and
+# only the login-screen smoke runs.
 smoke:simulator:
   extends: .macos
   stage: smoke
@@ -107,6 +114,32 @@ smoke:simulator:
     expire_in: 2 weeks
     paths:
       - build/upstream/fastlane/xcodebuild-*.log
+      - build/smoke-results/
+
+# The pass-rate measurement (MAINTAINING.md, "Tier 2: how the OIDC login is
+# driven"). Reuses the app the previous run built - AITY_SMOKE_SKIP_BUILD -
+# so N runs cost N test executions, not N compiles of the whole Pin on a
+# MacBook Air. Reports the rate; only a 0/N is a hard failure.
+measure:smoke-flakiness:
+  extends: .macos
+  stage: smoke
+  allow_failure: true
+  variables:
+    AITY_SMOKE_REPEAT: "5"
+    AITY_SMOKE_SKIP_BUILD: "true"
+    AITY_SMOKE_TESTS: AityDriveSmokeUITests/AccountJourneySmokeTests
+  script:
+    - bash scripts/materialize.sh staging
+    - brew bundle --file Brewfile
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios build_simulator_smoke
+  artifacts:
+    when: always
+    expire_in: 2 weeks
+    paths:
+      - build/upstream/fastlane/xcodebuild-*.log
+      - build/smoke-results/
 
 # ONE-TIME, and deliberately not part of any release flow: registers the
 # App IDs and App Store Connect records for both Environments and writes
