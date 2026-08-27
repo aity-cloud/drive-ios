@@ -612,23 +612,21 @@ platform :ios do
     UI.header("Apple Team ID: #{team_id}")
     File.write(File.join(FACTORY_ROOT, "apple-team-id.txt"), team_id)
 
-    # 2. App Store Connect records for the two parent ids.
+    # 2. App Store Connect records for the two parent ids. Apple's API
+    #    cannot create an app record - the `apps` resource allows only
+    #    GET/UPDATE ("The resource 'apps' does not allow 'CREATE'", verified
+    #    2026-08-27) - so this only CHECKS, and tells the human exactly what
+    #    to click when one is missing. Everything else in this lane is
+    #    automatic; this is the one irreducible manual step.
+    missing_records = []
     AITY_IDENTITY.each_key do |env|
       ids = aity_ids(env)
       name = env == "production" ? "Aity Drive" : "Aity Drive Staging"
       if Spaceship::ConnectAPI::App.find(ids[:app]).nil?
-        Spaceship::ConnectAPI::App.create(
-          name: name,
-          version_string: "1.0",
-          sku: ids[:app].tr(".", "-"),
-          primary_locale: "en-US",
-          bundle_id: ids[:app],
-          platforms: ["IOS"],
-          company_name: "AITY CLOUD SRL"
-        )
-        UI.success("created App Store Connect record '#{name}' (#{ids[:app]})")
+        missing_records << [name, ids[:app]]
+        UI.important("no App Store Connect record for #{ids[:app]}")
       else
-        UI.message("App Store Connect record for #{ids[:app]} already exists")
+        UI.message("App Store Connect record for #{ids[:app]} exists")
       end
     end
 
@@ -645,6 +643,15 @@ platform :ios do
       readonly: false,
       api_key: api_key
     )
+
+    unless missing_records.empty?
+      UI.important("")
+      UI.important("MANUAL STEP - create these in App Store Connect (My Apps > +):")
+      missing_records.each do |name, identifier|
+        UI.important("  name '#{name}'  platform iOS  bundle id #{identifier}  SKU #{identifier.tr('.', '-')}  language English (U.S.)")
+      end
+      UI.important("Uploads to a missing record fail; everything else above is done.")
+    end
 
     UI.success("Bootstrap complete. Set AITY_TEAM_ID=#{team_id} as a protected group variable, then the publish lanes can run.")
     UI.important("App groups: #{aity_ids('production')[:group]} and #{aity_ids('staging')[:group]} must exist in the Developer Portal and be associated with every App ID above - the App Store Connect API cannot manage app groups, so create/associate them by hand if signing complains about a missing entitlement.")
