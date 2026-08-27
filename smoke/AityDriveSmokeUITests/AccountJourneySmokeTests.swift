@@ -411,6 +411,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 	                         openingSpaceNamed spaceName: String) -> Bool {
 		let deadline = Date().addingTimeInterval(timeout)
 		var opened = false
+		var lastTrace = Date.distantPast
 		while Date() < deadline {
 			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
 			if !opened {
@@ -420,6 +421,13 @@ final class AccountJourneySmokeTests: XCTestCase {
 					entry.tap()
 					opened = true
 				}
+			}
+			// Without this, a run that never finds the file spends three
+			// minutes printing "Checking existence of ..." and says nothing
+			// about what WAS on screen.
+			if Date().timeIntervalSince(lastTrace) > 20 {
+				trace("still waiting for '\(name)'; \(visibleLabels(app))")
+				lastTrace = Date()
 			}
 			usleep(1_000_000)
 		}
@@ -438,8 +446,20 @@ final class AccountJourneySmokeTests: XCTestCase {
 		print("[aity-smoke] \(message)")
 	}
 
+	/// XCUIApplication.debugDescription prints only the query chain once the
+	/// app is not attached, which is exactly when a failure needs it most. The
+	/// labels of what is on screen are always available and are what a human
+	/// reads anyway.
+	private func visibleLabels(_ app: XCUIApplication) -> [String] {
+		var labels: [String] = []
+		for query in [app.staticTexts, app.buttons, app.cells] {
+			labels += query.allElementsBoundByIndex.prefix(60).map { $0.label }
+		}
+		return Array(Set(labels.filter { !$0.isEmpty })).sorted()
+	}
+
 	private func hierarchy(_ app: XCUIApplication) -> String {
-		String(app.debugDescription.prefix(20_000))
+		"visible labels: \(visibleLabels(app))\n\n" + String(app.debugDescription.prefix(8_000))
 	}
 
 	private func attach(_ app: XCUIApplication, named name: String) {
