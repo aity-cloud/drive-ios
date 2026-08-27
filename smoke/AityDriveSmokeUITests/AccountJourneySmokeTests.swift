@@ -103,12 +103,26 @@ final class AccountJourneySmokeTests: XCTestCase {
 
 		// --- The actual assertion of Tier 2: the app shows content that came
 		// from the server, not just a screen that finished loading.
+		let sawSeededFile = waitForCell(app, named: seededFile, timeout: 180,
+		                                openingSpaceNamed: personal.name)
+
+		// Distinguish "the app crashed" from "the file never showed up". They
+		// look identical from here and mean completely different things: one is
+		// a defect in the app, the other in the test or the server.
+		if app.state != .runningForeground {
+			XCTFail("THE APP TERMINATED during the journey, shortly after the personal space " +
+			        "was opened. This is an app crash, not a missing element - see " +
+			        "MAINTAINING.md, 'The app terminates after opening the personal space'.")
+			return
+		}
+
 		XCTAssertTrue(
-			waitForCell(app, named: seededFile, timeout: 180, openingSpaceNamed: personal.name),
+			sawSeededFile,
 			"'\(seededFile)' was put into the personal space over WebDAV before launch but never " +
 			"appeared in the app's file list. Either the account did not open, or the list is not " +
 			"the personal space.\n\n\(hierarchy(app))"
 		)
+		
 		attach(app, named: "personal-space-file-list")
 
 		// --- Create a folder from the app and watch it show up.
@@ -497,7 +511,12 @@ final class AccountJourneySmokeTests: XCTestCase {
 	/// app is not attached, which is exactly when a failure needs it most. The
 	/// labels of what is on screen are always available and are what a human
 	/// reads anyway.
+	/// Any query can throw "Lost connection to the application" the moment the
+	/// app dies, and an XCUITest failure raised from inside a diagnostic hides
+	/// the thing being diagnosed. Nothing here is allowed to be the cause of a
+	/// failure.
 	private func visibleLabels(_ app: XCUIApplication) -> [String] {
+		guard app.state == .runningForeground else { return ["(the app is not running)"] }
 		var labels: [String] = []
 		for query in [app.staticTexts, app.cells] {
 			labels += query.allElementsBoundByIndex.prefix(60).map { $0.label }
@@ -519,7 +538,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		guard app.wait(for: .runningForeground, timeout: 5) else {
 			return "the app is NOT RUNNING - it terminated during the journey"
 		}
-		return "visible labels: \(visibleLabels(app))\n\n" + String(app.debugDescription.prefix(8_000))
+		return "visible labels: \(visibleLabels(app))"
 	}
 
 	private func attach(_ app: XCUIApplication, named name: String) {

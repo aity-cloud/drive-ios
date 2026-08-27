@@ -205,6 +205,41 @@ What the first real runs established (2026-08-27), so nobody re-derives it:
   journey leaves the app signed in, so running them together reported the
   login-screen smoke as broken when it was not.
 
+### The app terminates after opening the personal space (open, 2026-08-27)
+
+The journey reaches the file list and the seeded file appears (run
+16149784314 got past that assertion and on to the "+" button), but **the app
+intermittently dies a few seconds after the personal space is opened**.
+XCUITest reports it as `Failed to get matching snapshot: Lost connection to
+the application (pid ...)` or `Application tech.aity.drive.staging is not
+running`, followed by "Checking for crash reports corresponding to
+unexpected termination".
+
+The sequence, from run 16149927452:
+
+```
+t = 11.44s  Tap "Done"                       (account setup complete)
+t = 12.33s  Tap the account row              (connects; "Status Online" appears)
+t = 14.49s  Tap "Personal"                   (opens the personal space)
+t = 21.78s  ... unexpected termination of tech.aity.drive.staging
+```
+
+Not every run: the same build got through the same taps and listed the files
+in the run before. So it is a race, not a deterministic crash, and it is on
+the app's side - the test does nothing but tap and read after that point.
+
+What this means for the smoke: `AccountJourneySmokeTests` has NOT had a fully
+green run yet, and its pass rate is 0/6. That is a genuine finding, not a
+flaky test to paper over - the smoke is doing exactly the job it exists for.
+`LoginScreenSmokeTests` is 6/6 in the same runs, and the sign-in half of the
+journey works every time.
+
+Next step for whoever picks this up: the crash log is on the simulator
+(`~/Library/Logs/DiagnosticReports` on the Mac runner, and inside the
+`.xcresult`) - read it before changing anything in the test. `smoke:simulator`
+is `when: manual`, and manual jobs are allow_failure by default, so nothing
+is gated on this today.
+
 Before pushing anything in `smoke/`, run
 **`scripts/check-smoke-swift.sh`**. `swiftc -parse` only parses - it never
 resolves a name - so deleting a helper that is still called compiles clean

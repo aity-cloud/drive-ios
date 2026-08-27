@@ -92,6 +92,7 @@ public class XCUIElement {
 	public func coordinate(withNormalizedOffset offset: CGVector) -> XCUICoordinate { XCUICoordinate() }
 
 	public var identifier: String { "" }
+	public var state: State { .notRunning }
 	public var buttons: XCUIElementQuery { XCUIElementQuery() }
 	public var navigationBars: XCUIElementQuery { XCUIElementQuery() }
 	public var staticTexts: XCUIElementQuery { XCUIElementQuery() }
