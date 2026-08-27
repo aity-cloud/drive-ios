@@ -176,6 +176,35 @@ Traps this cost, all confirmed against the real staging realm:
   based, fully deterministic login would need a Patch wiring it into the app's
   URL handling. Worth remembering if the sheet ever proves too flaky.
 
+What the first real runs established (2026-08-27), so nobody re-derives it:
+
+- **The OIDC login works end to end and takes about 13 seconds.** Intro ->
+  "Open login page" -> the SafariViewService sheet -> email page -> password
+  page -> sheet closes -> "Account setup complete" -> Done. No SpringBoard
+  consent alert appears, which is `browser-session-prefers-ephermal` doing
+  its job.
+- **Both login pages are submitted with the KEYBOARD RETURN KEY, not a
+  button tap.** The submit button of the Keycloakify pages sits below the
+  fold on a phone-sized sheet, and XCUITest refuses to tap an element it
+  considers not hittable. The button tap (plus a swipe) is still there as the
+  fallback.
+- **After login the app shows the account SIDEBAR, not the file list.** On a
+  phone the split view is collapsed, so "Drive Contract" (the personal space
+  - on oCIS its name is the user's DISPLAY NAME, not the word "Personal"),
+  Spaces, Shares, Recents and Available Offline are what is on screen, and
+  the files are one push away. The account header repeats the space's name,
+  so tapping the first static text with that name taps the header and nothing
+  happens; tap the CELL.
+- **`XCUIApplication.debugDescription` is useless in a failure message**: once
+  the app is not attached it prints the query chain, not the tree. Collect the
+  labels of static texts, buttons and cells instead - which is what
+  `visibleLabels` does, and what turned the sidebar problem from a guess into
+  a one-line diagnosis.
+- **Each test class needs its own xcodebuild invocation and its own fresh
+  install.** `LoginScreenSmokeTests` asserts the FIRST-RUN screen, and the
+  journey leaves the app signed in, so running them together reported the
+  login-screen smoke as broken when it was not.
+
 Before pushing anything in `smoke/`, run
 **`scripts/check-smoke-swift.sh`**. `swiftc -parse` only parses - it never
 resolves a name - so deleting a helper that is still called compiles clean
