@@ -5,6 +5,16 @@ has not been verified. Read `UPSTREAM.md` first for the Bump procedure.
 
 ## UNVERIFIED - needs the Mac runner
 
+**Partly verified 2026-08-27** - first green run on the `macos` runner
+(MacBook Air, Xcode 26.2, job 16140937726): materialize + the full
+`aity_apply_identity` transcription (schemes rewritten, ids set on all 7
+targets, app group, appicon), the unsigned simulator build, `simctl`
+install of `tech.aity.drive.staging` ("Aity Drive (staging)"), xcodegen of
+the smoke project and the XCUITest run all execute for real. Everything
+signing-related (match, gym, pilot, deliver, notarisation) remains
+unverified - no Apple team, no certificates.
+
+
 This Factory was authored and Linux-validated on 2026-08-25 with **no
 macOS machine available**. Nothing below has ever been executed; the
 first session on the `macos` runner (runbooks/mac-runner.md) must verify
