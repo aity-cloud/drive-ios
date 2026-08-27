@@ -416,17 +416,21 @@ final class AccountJourneySmokeTests: XCTestCase {
 			if app.staticTexts[name].exists || cell(app, named: name).exists { return true }
 
 			// On a phone the split view is collapsed, so after login the app
-			// shows the account SIDEBAR (the space, Spaces, Shares, Recents,
-			// ...) and the file list is one push away. Tap the space's CELL,
-			// not the first static text with its name: the account header
-			// repeats that name and is the first match. Retried rather than
-			// tapped once, because the first tap can land while the sidebar is
-			// still assembling and be swallowed.
+			// shows the account SIDEBAR and the file list is one push away.
+			//
+			// The row to tap is the one labelled "Personal" - the app's own
+			// word for the personal space. NOT the space's server name
+			// ("Drive Contract", the user's display name): that appears in the
+			// ACCOUNT HEADER, whose cell also carries an "eject" button that
+			// disconnects the account. Tapping that header is what made an
+			// earlier run end with the app no longer running.
 			if Date().timeIntervalSince(lastTap) > 15 {
-				let row = cell(app, named: spaceName)
-				let target = row.exists ? row : app.staticTexts[spaceName].firstMatch
-				if target.exists && target.isHittable {
-					trace("opening the personal space '\(spaceName)' from the sidebar")
+				let target = [app.staticTexts["Personal"].firstMatch,
+				              app.buttons["Personal"].firstMatch,
+				              app.staticTexts[spaceName].firstMatch]
+					.first { $0.exists && $0.isHittable }
+				if let target {
+					trace("opening the personal space from the sidebar (\(target.label))")
 					target.tap()
 					lastTap = Date()
 				}
@@ -435,6 +439,13 @@ final class AccountJourneySmokeTests: XCTestCase {
 			// minutes printing "Checking existence of ..." and says nothing
 			// about what WAS on screen.
 			if Date().timeIntervalSince(lastTrace) > 20 {
+				// An app that has gone away will never show the file, and every
+				// later query fails with "Application is not running", which
+				// buries the real cause. Say it once, plainly.
+				guard app.wait(for: .runningForeground, timeout: 5) else {
+					trace("the app is no longer running - it terminated during the journey")
+					return false
+				}
 				trace("still waiting for '\(name)'; \(visibleLabels(app))")
 				lastTrace = Date()
 			}
