@@ -371,12 +371,24 @@ platform :ios do
     identity_info = aity_apply_identity(team_id: nil, build_number: ENV["CI_PIPELINE_IID"])
 
     derived_data = "../build-simulator"
-    sh "set -o pipefail && xcodebuild build " \
+    # The full xcodebuild transcript goes to a FILE, never to the console:
+    # teeing it flooded GitLab's 4 MB job-log cap and truncated the run at
+    # "Job's log exceeded limit", so the actual error was unreadable
+    # (2026-08-27, first real run on the Mac runner). On failure we print the
+    # error lines and the tail, which is what a human needs anyway; the whole
+    # log ships as a job artifact either way.
+    # ARCHS is the host arch: the generic simulator destination otherwise
+    # builds arm64 AND x86_64, doubling a cold build for a slice no Apple
+    # Silicon simulator ever runs.
+    sh "set -o pipefail; xcodebuild build " \
        "-project ../ownCloud.xcodeproj -scheme ownCloud -configuration Debug " \
        "-destination 'generic/platform=iOS Simulator' " \
-       "-derivedDataPath #{derived_data} " \
+       "-derivedDataPath #{derived_data} -quiet " \
+       "ARCHS=$(uname -m) ONLY_ACTIVE_ARCH=NO " \
        "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' " \
-       "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' | tee xcodebuild-simulator.log"
+       "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' > xcodebuild-simulator.log 2>&1 || " \
+       "{ echo '--- error lines ---'; grep -nE 'error:|BUILD FAILED|The following build commands failed' xcodebuild-simulator.log | tail -40; " \
+       "echo '--- last 120 lines ---'; tail -120 xcodebuild-simulator.log; exit 1; }"
 
     apps = Dir.glob("#{derived_data}/Build/Products/Debug-iphonesimulator/*.app")
     UI.user_error!("Simulator build produced no .app under #{derived_data}") if apps.empty?
@@ -395,13 +407,16 @@ platform :ios do
     smoke_dir = File.join(FACTORY_ROOT, "smoke")
     UI.user_error!("#{smoke_dir}/project.yml missing") unless File.exist?(File.join(smoke_dir, "project.yml"))
     sh "cd '#{smoke_dir}' && xcodegen generate"
-    sh "set -o pipefail && " \
+    # Same log discipline as the build above: file, not console.
+    sh "set -o pipefail; " \
        "TEST_RUNNER_AITY_APP_BUNDLE_ID='#{ids[:app]}' " \
        "TEST_RUNNER_AITY_APP_NAME='#{AITY_IDENTITY[env][:app_name]}' " \
        "xcodebuild test -project '#{smoke_dir}/AityDriveSmoke.xcodeproj' " \
-       "-scheme AityDriveSmokeUITests " \
+       "-scheme AityDriveSmokeUITests -quiet " \
        "-destination 'platform=iOS Simulator,name=#{sim_name}' " \
-       "| tee xcodebuild-smoke.log"
+       "> xcodebuild-smoke.log 2>&1 || " \
+       "{ echo '--- error lines ---'; grep -nE 'error:|failed|Failing tests' xcodebuild-smoke.log | tail -40; " \
+       "echo '--- last 120 lines ---'; tail -120 xcodebuild-smoke.log; exit 1; }"
 
     UI.success("Simulator smoke green for #{env} (#{ids[:app]})")
   end
