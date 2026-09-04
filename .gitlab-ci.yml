@@ -33,7 +33,7 @@ variables:
   # submodule has no pin of its own - scripts/materialize.sh checks it out
   # at the commit this app tag records, so bumping UPSTREAM_TAG moves both.
   # renovate: datasource=github-tags depName=owncloud/ios-app
-  UPSTREAM_TAG: "v12.7.0"
+  UPSTREAM_TAG: "v12.7.1"
 
 workflow:
   rules:
