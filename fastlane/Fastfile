@@ -507,20 +507,20 @@ platform :ios do
       # ARCHS is the host arch: the generic simulator destination otherwise
       # builds arm64 AND x86_64, doubling a cold build for a slice no Apple
       # Silicon simulator ever runs.
+      # AD-HOC SIGNED, not unsigned. CODE_SIGNING_ALLOWED=NO strips the
+      # entitlements, so the app-group container does not exist, and
+      # connecting an account walks into
+      # NSFileProviderManager.documentStorageURL -> NSAssert -> SIGABRT
+      # (crash report read 2026-08-27: OCVault storageRootURL, called
+      # from AccountConnection.startFPServiceStandbyIfNotRunning). The
+      # simulator honours entitlements from an ad-hoc signature and
+      # needs no Apple account, so the smoke now exercises the same
+      # container layout a real build has.
       sh "set -o pipefail; xcodebuild build " \
          "-project ../ownCloud.xcodeproj -scheme ownCloud -configuration Debug " \
          "-destination 'generic/platform=iOS Simulator' " \
          "-derivedDataPath '#{derived_data}' -quiet " \
          "ARCHS=$(uname -m) ONLY_ACTIVE_ARCH=NO " \
-         # AD-HOC SIGNED, not unsigned. CODE_SIGNING_ALLOWED=NO strips the
-         # entitlements, so the app-group container does not exist, and
-         # connecting an account walks into
-         # NSFileProviderManager.documentStorageURL -> NSAssert -> SIGABRT
-         # (crash report read 2026-08-27: OCVault storageRootURL, called
-         # from AccountConnection.startFPServiceStandbyIfNotRunning). The
-         # simulator honours entitlements from an ad-hoc signature and
-         # needs no Apple account, so the smoke now exercises the same
-         # container layout a real build has.
          "CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='-' " \
          "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='' " \
          "APP_BUILD_FLAGS='#{identity_info[:build_flags]}' > xcodebuild-simulator.log 2>&1 || " \
