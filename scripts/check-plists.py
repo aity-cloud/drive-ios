@@ -28,6 +28,9 @@ STAG = REPO_ROOT / "overlay/staging/ownCloud/Resources/Theming/Branding.plist"
 # Keys allowed (and required) to differ between the Environments, with the
 # exact values the identity table in meta/specs/aity-drive-v1.md fixes.
 ENV_SPECIFIC_KEYS = {
+    "branding.url-privacy": ("https://app.aity.tech/privacy/policy", "https://app.aity.works/privacy/policy"),
+    "branding.sidebar-links$[1].url": ("https://app.aity.tech/privacy/account-deletion", "https://app.aity.works/privacy/account-deletion"),
+    "branding.sidebar-links$[2].url": ("https://app.aity.tech/privacy/data-deletion", "https://app.aity.works/privacy/data-deletion"),
     "branding.app-name": ("Aity Drive", "Aity Drive (staging)"),
     "branding.profile-url": ("https://drive.aity.tech", "https://drive.aity.works"),
     "branding.profile-bookmark-name": ("Aity Drive", "Aity Drive (staging)"),
