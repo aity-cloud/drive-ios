@@ -73,7 +73,7 @@
 	<key>branding.url-privacy</key>
 	<string>https://aity.ro/documente/confidentialitate/</string>
 	<key>branding.url-terms-of-use</key>
-	<string>https://aity.tech/documents/terms/</string>
+	<string>https://aity.ro/documente/termeni/</string>
 
 
 	<!-- Brand palette (meta/brand: red-600 primary, red-800 active).

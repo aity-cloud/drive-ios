@@ -50,7 +50,7 @@
 	<key>branding.url-privacy</key>
 	<string>https://aity.ro/documente/confidentialitate/</string>
 	<key>branding.url-terms-of-use</key>
-	<string>https://aity.tech/documents/terms/</string>
+	<string>https://aity.ro/documente/termeni/</string>
 
 
 	<key>branding.theme-definitions$[0].Identifier</key>

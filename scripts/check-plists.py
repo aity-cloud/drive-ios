@@ -62,7 +62,7 @@ PINNED_COMMON = {
     # point at app.aity.<env>/privacy/policy, which is the product page about
     # data handling, not the policy (Raul, 2026-09-14).
     "branding.url-privacy": "https://aity.ro/documente/confidentialitate/",
-    "branding.url-terms-of-use": "https://aity.tech/documents/terms/",
+    "branding.url-terms-of-use": "https://aity.ro/documente/termeni/",
     "branding.theme-definitions$[0].lightBrandColor": "#b80818",
     "build.flags": "DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP",
 }
