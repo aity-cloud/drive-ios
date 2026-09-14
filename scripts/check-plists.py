@@ -28,7 +28,6 @@ STAG = REPO_ROOT / "overlay/staging/ownCloud/Resources/Theming/Branding.plist"
 # Keys allowed (and required) to differ between the Environments, with the
 # exact values the identity table in meta/specs/aity-drive-v1.md fixes.
 ENV_SPECIFIC_KEYS = {
-    "branding.url-privacy": ("https://app.aity.tech/privacy/policy", "https://app.aity.works/privacy/policy"),
     "branding.send-feedback-url": ("https://app.aity.tech/privacy/account-deletion", "https://app.aity.works/privacy/account-deletion"),
     "branding.app-name": ("Aity Drive", "Aity Drive (staging)"),
     "branding.profile-url": ("https://drive.aity.tech", "https://drive.aity.works"),
@@ -57,6 +56,13 @@ PINNED_COMMON = {
     "authentication-oauth2.oa2-client-secret": "",
     "connection.allowed-authentication-methods": ["com.owncloud.openid-connect"],
     "branding.url-documentation": "https://github.com/aity-cloud/drive-ios",
+    # PINNED, not environment-specific: the privacy policy and the terms are
+    # one legal document each for the whole estate, published on aity.ro, and
+    # a staging build must show the customer the same one. url-privacy used to
+    # point at app.aity.<env>/privacy/policy, which is the product page about
+    # data handling, not the policy (Raul, 2026-09-14).
+    "branding.url-privacy": "https://aity.ro/documente/confidentialitate/",
+    "branding.url-terms-of-use": "https://aity.tech/documents/terms/",
     "branding.theme-definitions$[0].lightBrandColor": "#b80818",
     "build.flags": "DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP",
 }
