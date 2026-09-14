@@ -67,51 +67,13 @@
 
 	<!-- ADR 0003: GPLv3 notices stay (the Acknowledgements screen and every
 	     source header ship as upstream wrote them) and the app links its
-	     complete corresponding source - from Settings > More, via
-	     branding.url-documentation above, not from the sidebar (Raul,
-	     2026-09-14). The sidebar keeps only the account-deletion links the
-	     App Store requires. -->
-	<key>branding.sidebar-links-title</key>
-	<string>Aity Drive</string>
-
-	<!-- Brand palette (meta/brand: red-600 primary, red-800 active).
-	     Only the keys generateThemeStyle() reads at the Pin
-	     (ownCloudAppShared/Branding/Branding+App.swift); the Colors.*
-	     keys seen in upstream's ownBrander template are not consumed at
-	     v12.7.0 - cssRecords is the tuning channel if Mac-day review
-	     needs it. -->
-	<key>branding.theme-definitions$[0].Identifier</key>
-	<string>tech.aity.drive.theme</string>
-	<key>branding.theme-definitions$[0].Name</key>
-	<string>Aity</string>
-	<key>branding.theme-definitions$[0].ThemeStyle</key>
-	<string>light</string>
-	<key>branding.theme-definitions$[0].lightBrandColor</key>
-	<string>#b80818</string>
-	<key>branding.theme-definitions$[0].darkBrandColor</key>
-	<string>#780611</string>
-
-	<!-- Build-time keys, consumed by the fastlane lanes exactly as
-	     upstream's build_ipa_in_house consumes them. -->
-	<key>build.flags</key>
-	<string>DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP</string>
-	<key>build.custom-app-scheme</key>
-	<string>aitydrive-app</string>
-	<key>build.custom-auth-scheme</key>
-	<string>aitydrive</string>
-	<key>build.app-group-identifier</key>
-	<string>group.tech.aity.drive</string>
-	<key>branding.sidebar-links$[0].title</key>
-	<string>Ștergerea contului de serviciu</string>
-	<key>branding.sidebar-links$[0].url</key>
+	     complete corresponding source from Settings > More via
+	     branding.url-documentation above. Nothing goes in the sidebar (Raul,
+	     2026-09-14): the account and data deletion the App Store requires is
+	     the "Send feedback" row under More, relabelled by debrand-strings.py -
+	     send-feedback-address is "null" (upstream's documented off switch for
+	     the mail path), so the row opens this URL instead. -->
+	<key>branding.send-feedback-url</key>
 	<string>https://app.aity.tech/privacy/account-deletion</string>
-	<key>branding.sidebar-links$[0].symbol</key>
-	<string>person.crop.circle.badge.minus</string>
-	<key>branding.sidebar-links$[1].title</key>
-	<string>Ștergerea datelor personale</string>
-	<key>branding.sidebar-links$[1].url</key>
-	<string>https://app.aity.tech/privacy/data-deletion</string>
-	<key>branding.sidebar-links$[1].symbol</key>
-	<string>trash</string>
 </dict>
 </plist>

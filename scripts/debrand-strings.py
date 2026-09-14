@@ -44,7 +44,8 @@ IDENTIFIER_KEYS = {"CFBundleURLName"}
 # "Documentation" row whenever branding.url-documentation is set; ours points
 # at the complete corresponding source, so the label says what the row does.
 # Same text in every locale: it names a link, not a sentence to translate.
-RELABEL = {"Documentation": "Source code & licences (GPLv3)"}
+RELABEL = {"Documentation": "Source code & licences (GPLv3)",
+           "Send feedback": "Delete account or data"}
 
 
 def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str = ""):
