@@ -52,6 +52,16 @@
 	     an empty documentation URL hides the Documentation row. -->
 	<key>branding.send-feedback-address</key>
 	<string>null</string>
+	<!-- ADR 0003: GPLv3 notices stay (the Acknowledgements screen and every
+	     source header ship as upstream wrote them) and the app links its
+	     complete corresponding source from Settings > More via
+	     branding.url-documentation above. Nothing goes in the sidebar (Raul,
+	     2026-09-14): the account and data deletion the App Store requires is
+	     the "Send feedback" row under More, relabelled by debrand-strings.py -
+	     send-feedback-address is "null" (upstream's documented off switch for
+	     the mail path), so the row opens this URL instead. -->
+	<key>branding.send-feedback-url</key>
+	<string>https://app.aity.tech/privacy/account-deletion</string>
 	<key>branding.enable-review-prompt</key>
 	<false/>
 	<key>branding.url-documentation</key>
@@ -65,15 +75,33 @@
 	<key>branding.url-terms-of-use</key>
 	<string>https://aity.tech/documents/terms/</string>
 
-	<!-- ADR 0003: GPLv3 notices stay (the Acknowledgements screen and every
-	     source header ship as upstream wrote them) and the app links its
-	     complete corresponding source from Settings > More via
-	     branding.url-documentation above. Nothing goes in the sidebar (Raul,
-	     2026-09-14): the account and data deletion the App Store requires is
-	     the "Send feedback" row under More, relabelled by debrand-strings.py -
-	     send-feedback-address is "null" (upstream's documented off switch for
-	     the mail path), so the row opens this URL instead. -->
-	<key>branding.send-feedback-url</key>
-	<string>https://app.aity.tech/privacy/account-deletion</string>
+
+	<!-- Brand palette (meta/brand: red-600 primary, red-800 active).
+	     Only the keys generateThemeStyle() reads at the Pin
+	     (ownCloudAppShared/Branding/Branding+App.swift); the Colors.*
+	     keys seen in upstream's ownBrander template are not consumed at
+	     v12.7.0 - cssRecords is the tuning channel if Mac-day review
+	     needs it. -->
+	<key>branding.theme-definitions$[0].Identifier</key>
+	<string>tech.aity.drive.theme</string>
+	<key>branding.theme-definitions$[0].Name</key>
+	<string>Aity</string>
+	<key>branding.theme-definitions$[0].ThemeStyle</key>
+	<string>light</string>
+	<key>branding.theme-definitions$[0].lightBrandColor</key>
+	<string>#b80818</string>
+	<key>branding.theme-definitions$[0].darkBrandColor</key>
+	<string>#780611</string>
+
+	<!-- Build-time keys, consumed by the fastlane lanes exactly as
+	     upstream's build_ipa_in_house consumes them. -->
+	<key>build.flags</key>
+	<string>DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP</string>
+	<key>build.custom-app-scheme</key>
+	<string>aitydrive-app</string>
+	<key>build.custom-auth-scheme</key>
+	<string>aitydrive</string>
+	<key>build.app-group-identifier</key>
+	<string>group.tech.aity.drive</string>
 </dict>
 </plist>
