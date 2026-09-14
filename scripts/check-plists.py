@@ -29,8 +29,8 @@ STAG = REPO_ROOT / "overlay/staging/ownCloud/Resources/Theming/Branding.plist"
 # exact values the identity table in meta/specs/aity-drive-v1.md fixes.
 ENV_SPECIFIC_KEYS = {
     "branding.url-privacy": ("https://app.aity.tech/privacy/policy", "https://app.aity.works/privacy/policy"),
-    "branding.sidebar-links$[1].url": ("https://app.aity.tech/privacy/account-deletion", "https://app.aity.works/privacy/account-deletion"),
-    "branding.sidebar-links$[2].url": ("https://app.aity.tech/privacy/data-deletion", "https://app.aity.works/privacy/data-deletion"),
+    "branding.sidebar-links$[0].url": ("https://app.aity.tech/privacy/account-deletion", "https://app.aity.works/privacy/account-deletion"),
+    "branding.sidebar-links$[1].url": ("https://app.aity.tech/privacy/data-deletion", "https://app.aity.works/privacy/data-deletion"),
     "branding.app-name": ("Aity Drive", "Aity Drive (staging)"),
     "branding.profile-url": ("https://drive.aity.tech", "https://drive.aity.works"),
     "branding.profile-bookmark-name": ("Aity Drive", "Aity Drive (staging)"),
@@ -57,7 +57,7 @@ PINNED_COMMON = {
     "authentication-oauth2.oa2-client-id": "drive-ios",
     "authentication-oauth2.oa2-client-secret": "",
     "connection.allowed-authentication-methods": ["com.owncloud.openid-connect"],
-    "branding.sidebar-links$[0].url": "https://github.com/aity-cloud/drive-ios",
+    "branding.url-documentation": "https://github.com/aity-cloud/drive-ios",
     "branding.theme-definitions$[0].lightBrandColor": "#b80818",
     "build.flags": "DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP",
 }

@@ -41,7 +41,7 @@
 	<key>branding.enable-review-prompt</key>
 	<false/>
 	<key>branding.url-documentation</key>
-	<string></string>
+	<string>https://github.com/aity-cloud/drive-ios</string>
 
 	<key>branding.url-help</key>
 	<string>https://aity.ro/contacteaza-ne/</string>
@@ -52,12 +52,6 @@
 
 	<key>branding.sidebar-links-title</key>
 	<string>Aity Drive</string>
-	<key>branding.sidebar-links$[0].title</key>
-	<string>Source code (GPLv3)</string>
-	<key>branding.sidebar-links$[0].url</key>
-	<string>https://github.com/aity-cloud/drive-ios</string>
-	<key>branding.sidebar-links$[0].symbol</key>
-	<string>link</string>
 
 	<key>branding.theme-definitions$[0].Identifier</key>
 	<string>tech.aity.drive.theme</string>
@@ -78,17 +72,17 @@
 	<string>aitydrive-staging</string>
 	<key>build.app-group-identifier</key>
 	<string>group.tech.aity.drive.staging</string>
-	<key>branding.sidebar-links$[1].title</key>
+	<key>branding.sidebar-links$[0].title</key>
 	<string>Ștergerea contului de serviciu</string>
-	<key>branding.sidebar-links$[1].url</key>
+	<key>branding.sidebar-links$[0].url</key>
 	<string>https://app.aity.works/privacy/account-deletion</string>
-	<key>branding.sidebar-links$[1].symbol</key>
+	<key>branding.sidebar-links$[0].symbol</key>
 	<string>person.crop.circle.badge.minus</string>
-	<key>branding.sidebar-links$[2].title</key>
+	<key>branding.sidebar-links$[1].title</key>
 	<string>Ștergerea datelor personale</string>
-	<key>branding.sidebar-links$[2].url</key>
+	<key>branding.sidebar-links$[1].url</key>
 	<string>https://app.aity.works/privacy/data-deletion</string>
-	<key>branding.sidebar-links$[2].symbol</key>
+	<key>branding.sidebar-links$[1].symbol</key>
 	<string>trash</string>
 </dict>
 </plist>

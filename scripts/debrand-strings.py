@@ -40,6 +40,12 @@ def rewrite(value: str, app_name: str) -> str:
 # bundle id instead, keeping upstream's trailing component.
 IDENTIFIER_KEYS = {"CFBundleURLName"}
 
+# Rows we REPURPOSE rather than debrand. Settings > More shows a
+# "Documentation" row whenever branding.url-documentation is set; ours points
+# at the complete corresponding source, so the label says what the row does.
+# Same text in every locale: it names a link, not a sentence to translate.
+RELABEL = {"Documentation": "Source code & licences (GPLv3)"}
+
 
 def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str = ""):
     """Rewrite string VALUES in place; dict keys are never touched."""
@@ -66,7 +72,7 @@ def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str
 # Legacy .strings syntax:  "key" = "value";  - the format the SOURCE tree
 # actually uses (Xcode compiles it to a binary plist at build time). Only
 # the right-hand side is rewritten; the key is the lookup identifier.
-LEGACY_PAIR = re.compile(r'^(?P<lead>\s*"(?:[^"\\]|\\.)*"\s*=\s*")(?P<value>(?:[^"\\]|\\.)*)(?P<tail>";.*)$')
+LEGACY_PAIR = re.compile(r'^(?P<lead>\s*"(?P<key>(?:[^"\\]|\\.)*)"\s*=\s*")(?P<value>(?:[^"\\]|\\.)*)(?P<tail>";.*)$')
 
 
 def process_legacy(path: Path, app_name: str) -> int:
@@ -83,14 +89,52 @@ def process_legacy(path: Path, app_name: str) -> int:
     out = []
     for line in text.splitlines(keepends=True):
         match = LEGACY_PAIR.match(line.rstrip("\n"))
-        if match and MARKS.search(match.group("value")):
+        if match and (MARKS.search(match.group("value")) or match.group("key") in RELABEL):
             newline = "\n" if line.endswith("\n") else ""
-            line = match.group("lead") + rewrite(match.group("value"), app_name) + match.group("tail") + newline
+            value = RELABEL.get(match.group("key")) or rewrite(match.group("value"), app_name)
+            line = match.group("lead") + value + match.group("tail") + newline
             changed += 1
         out.append(line)
 
     if changed:
         path.write_text("".join(out), encoding=encoding)
+    return changed
+
+
+def process_xcstrings(path: Path, app_name: str) -> int:
+    """String Catalogs (Xcode 15+): JSON, one entry per key, per-locale values.
+
+    The main app moved to Localizable.xcstrings while the .lproj files this
+    script was written for became leftovers - which is how "Use ownCloud
+    actions in Shortcuts." kept shipping. The KEY is the English source text
+    and is what iOS displays when a locale has no value, so a key that
+    carries the mark also gets an explicit "en" value.
+    """
+    import json
+    data = json.loads(path.read_text(encoding="utf-8"))
+    strings = data.get("strings")
+    if not isinstance(strings, dict):
+        return 0
+    changed = 0
+    for key, entry in strings.items():
+        wanted = RELABEL.get(key)
+        locs = entry.setdefault("localizations", {})
+        for loc in locs.values():
+            unit = loc.get("stringUnit")
+            if not isinstance(unit, dict):
+                continue
+            value = unit.get("value", "")
+            new = wanted if wanted else (rewrite(value, app_name) if MARKS.search(value) else value)
+            if new != value:
+                unit["value"] = new
+                unit["state"] = "translated"
+                changed += 1
+        if (wanted or MARKS.search(key)) and "en" not in locs:
+            locs["en"] = {"stringUnit": {"state": "translated",
+                                         "value": wanted or rewrite(key, app_name)}}
+            changed += 1
+    if changed:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return changed
 
 
@@ -128,6 +172,15 @@ def main() -> None:
 
     total_files = 0
     total_values = 0
+    for pattern in ("**/*.xcstrings",):
+        for path in tree.glob(pattern):
+            if "/build/" in str(path):
+                continue
+            n = process_xcstrings(path, app_name)
+            if n:
+                total_values += n
+                total_files += 1
+                print(f"debrand-strings: {path.relative_to(tree)}: {n} value(s)")
     for pattern in ("**/*.strings", "**/*.stringsdict", "**/Info.plist"):
         for path in tree.glob(pattern):
             # No "/build/" skip here: the materialised tree IS under build/,
