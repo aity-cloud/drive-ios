@@ -700,9 +700,13 @@ platform :ios do
   private_lane :aity_deliver_listing do |options|
     # Ruby's cwd in a lane is <tree>/fastlane, not the tree - a glob rooted at
     # "fastlane/screenshots" never matched and the promote lane silently
-    # uploaded metadata only (found 2026-09-15, first screenshot set).
-    metadata_path = File.join(__dir__, "metadata")
-    screenshots_path = File.join(__dir__, "screenshots")
+    # uploaded metadata only (found 2026-09-15, first screenshot set). And
+    # __dir__ is "." in a Fastfile, so the paths must be EXPANDED, not
+    # joined: deliver resolved a relative "./metadata" against the tree,
+    # found nothing and reported success with the record untouched (same
+    # day, one run later - check:appstore is what caught it).
+    metadata_path = File.expand_path("metadata", __dir__)
+    screenshots_path = File.expand_path("screenshots", __dir__)
     shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
 
