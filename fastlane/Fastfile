@@ -895,6 +895,127 @@ platform :ios do
     end
   end
 
+  desc "Read-only: what the PRODUCTION App Store listing still needs before it"
+  desc "can be submitted. Every item Apple requires, with a verdict each, so"
+  desc "the remaining work is a list rather than a guess. Changes nothing."
+  lane :aity_check_appstore do
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8])
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      filepath: File.absolute_path(ENV.fetch("ASC_KEY_P8"))
+    )
+
+    identifier = aity_ids("production")[:app]
+    app = Spaceship::ConnectAPI::App.find(identifier)
+    UI.user_error!("#{identifier}: no App Store Connect record") if app.nil?
+    UI.header("#{identifier} (#{app.name})")
+
+    todo = []
+    ok = ->(msg) { UI.success("  OK   #{msg}") }
+    missing = ->(msg, who) { UI.important("  TODO #{msg}"); todo << "#{msg}  [#{who}]" }
+
+    # The version Apple would submit: the editable one, else the newest.
+    version = begin
+      app.get_edit_app_store_version || app.get_latest_app_store_version
+    rescue StandardError
+      nil
+    end
+    if version.nil?
+      missing.call("no App Store version record - create one in App Store Connect", "Raul")
+    else
+      ok.call("version #{version.version_string} state #{version.app_store_state}")
+
+      build = begin
+        version.build
+      rescue StandardError
+        nil
+      end
+      if build
+        ok.call("build attached: #{build.version}")
+      else
+        missing.call("no build attached to the version - play promote:production-appstore", "CI")
+      end
+
+      # Text metadata, per locale. deliver can push all of this from the repo.
+      locs = begin
+        version.get_app_store_version_localizations
+      rescue StandardError => e
+        UI.error("  localizations unreadable: #{e.class}"); []
+      end
+      if locs.empty?
+        missing.call("no localizations at all", "CI (fastlane/metadata)")
+      end
+      locs.each do |loc|
+        %w[description keywords support_url].each do |field|
+          value = loc.send(field).to_s
+          if value.strip.empty?
+            missing.call("#{loc.locale}: #{field} empty", "CI (fastlane/metadata)")
+          else
+            ok.call("#{loc.locale}: #{field} (#{value.length} chars)")
+          end
+        end
+
+        # Screenshots are the expensive item: a UNIVERSAL app needs both an
+        # iPhone and an iPad display type, and Apple rejects a submission
+        # that has neither.
+        sets = begin
+          loc.get_app_screenshot_sets(includes: "appScreenshots")
+        rescue StandardError => e
+          UI.error("  #{loc.locale}: screenshot sets unreadable: #{e.class}"); []
+        end
+        if sets.empty?
+          missing.call("#{loc.locale}: NO screenshots (universal app needs iPhone and iPad)", "Raul or CI")
+        else
+          sets.each do |set|
+            count = begin
+              set.app_screenshots.length
+            rescue StandardError
+              0
+            end
+            ok.call("#{loc.locale}: #{set.screenshot_display_type} x#{count}")
+          end
+        end
+      end
+    end
+
+    # Things that live on the APP, not the version, and that Apple blocks a
+    # first submission on. The API cannot set most of them.
+    info = begin
+      app.fetch_live_app_info || app.fetch_edit_app_info
+    rescue StandardError
+      nil
+    end
+    if info
+      declaration = begin
+        info.fetch_age_rating_declaration
+      rescue StandardError
+        nil
+      end
+      declaration ? ok.call("age rating declared") : missing.call("age rating questionnaire", "Raul (App Store Connect)")
+
+      %w[primary_category secondary_category].each do |field|
+        value = begin
+          info.send(field)&.id
+        rescue StandardError
+          nil
+        end
+        value ? ok.call("#{field}: #{value}") : missing.call("#{field} not set", "Raul (App Store Connect)")
+      end
+    else
+      missing.call("app info record unreadable", "Raul (App Store Connect)")
+    end
+
+    # Privacy "nutrition labels" and pricing are not exposed for writing by
+    # the API in any supported way - they are clicks, and a first submission
+    # is rejected without them.
+    missing.call("App Privacy data-collection answers", "Raul (App Store Connect, cannot be automated)")
+    missing.call("pricing and availability", "Raul (App Store Connect, cannot be automated)")
+
+    UI.header("Remaining before submission: #{todo.length}")
+    todo.each { |item| UI.message("  - #{item}") }
+  end
+
   desc "Read-only: ask Apple which App IDs actually carry an App Group, and"
   desc "try to attach the missing ones. Prints a per-id verdict."
   lane :aity_check_app_groups do

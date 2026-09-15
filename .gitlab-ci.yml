@@ -303,6 +303,16 @@ check:testflight:
     - bundle exec fastlane ios aity_check_testflight
 
 # Read-only diagnostic: which App IDs actually carry an App Group.
+# Read-only diagnostic: everything the public App Store listing still needs.
+check:appstore:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_check_appstore
+
 check:app-groups:
   extends: .macos
   stage: publish-staging
