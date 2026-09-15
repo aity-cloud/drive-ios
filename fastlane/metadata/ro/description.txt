@@ -1,0 +1,26 @@
+Aity Drive îți ține fișierele la îndemână - pe iPhone, pe iPad, pe Mac și pe PC, întotdeauna în versiunea curentă.
+
+Deschide în tren, pe telefon, documentul pe care îl editai pe laptop. Tot ce pui în Aity Drive este acolo, iar tot ce modifici se salvează înapoi.
+
+CE PRIMEȘTI
+
+- Fișierele tale, offline. Marchează orice vrei să păstrezi pe dispozitiv și îl ai și fără semnal.
+- Dosare și spații adevărate. Organizează lucrul așa cum îl gândești deja, nu așa cum insistă o aplicație.
+- Partajează un link. Trimite un fișier cuiva care nu folosește Aity Drive, cu dată de expirare și parolă dacă vrei.
+- Fotografiile, păstrate. Pornește încărcarea automată și pozele pe care le faci sunt în Drive înainte să ajungi acasă.
+- Integrare cu aplicația Fișiere. Aity Drive apare lângă iCloud Drive, așa că orice aplicație care poate deschide un fișier le poate deschide pe ale tale.
+- Editare pe loc. Modifică un document direct din Drive, în aplicația pe care o folosești deja.
+
+CONSTRUIT PENTRU LUCRU
+
+Aity Drive este jumătatea de fișiere a spațiului de lucru Aity, alături de Aity Business Mail. Administratorul organizației tale decide cine ce vede, iar fișierele tale rămân pe infrastructură operată în România de AITY CLOUD SRL.
+
+Conectează-te cu contul pe care îl folosești deja pentru Aity - același cont, aceeași parolă și același pas de verificare în doi pași.
+
+NECESITĂ UN CONT
+
+Aity Drive are nevoie de un cont în spațiul de lucru Aity. Nu este un serviciu de stocare de sine stătător și nu există înregistrare în aplicație.
+
+SURSĂ DESCHISĂ
+
+Aity Drive este construit pe clienții ownCloud pentru desktop și mobil și este distribuit sub licența GNU General Public License versiunea 3. Sursa completă corespunzătoare este legată din Setări.
