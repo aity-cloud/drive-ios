@@ -689,12 +689,31 @@ platform :ios do
     # they are captured on the Mac builder, see
     # meta/docs/runbooks/app-store-screenshots.md - so this lane is useful
     # before and after that job.
-    shots = Dir.glob("fastlane/screenshots/*/*.png")
+    aity_deliver_listing(api_key: result[:api_key])
+    UI.success("Production build #{result[:build_number]} and the listing metadata are in App Store Connect")
+    UI.message("Run `check:appstore` for what still blocks submission.")
+  end
+
+  # Listing text + screenshots -> the production App Store record. Shared by
+  # promote (after the IPA) and publish:listing (on its own): a listing fix
+  # or a new screenshot set is not a release and must not need one.
+  private_lane :aity_deliver_listing do |options|
+    # Ruby's cwd in a lane is <tree>/fastlane, not the tree - a glob rooted at
+    # "fastlane/screenshots" never matched and the promote lane silently
+    # uploaded metadata only (found 2026-09-15, first screenshot set).
+    metadata_path = File.join(__dir__, "metadata")
+    screenshots_path = File.join(__dir__, "screenshots")
+    shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
 
     deliver(
-      api_key: result[:api_key],
+      api_key: options[:api_key],
       app_identifier: aity_ids("production")[:app],
+      metadata_path: metadata_path,
+      screenshots_path: screenshots_path,
+      skip_binary_upload: true,
+      # Uploads always target the editable version, never touch its number.
+      skip_app_version_update: true,
       skip_metadata: false,
       skip_screenshots: shots.empty?,
       overwrite_screenshots: !shots.empty?,
@@ -705,7 +724,19 @@ platform :ios do
       precheck_include_in_app_purchases: false,
       force: true
     )
-    UI.success("Production build #{result[:build_number]} and the listing metadata are in App Store Connect")
+    UI.success("Listing metadata#{shots.empty? ? '' : " and #{shots.length} screenshots"} are in App Store Connect")
+  end
+
+  desc "Listing text and screenshots -> App Store Connect, no binary."
+  desc "Manual from main or a tag (CI job publish:listing). CI-only."
+  lane :aity_publish_listing do
+    aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8])
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_P8")
+    )
+    aity_deliver_listing(api_key: api_key)
     UI.message("Run `check:appstore` for what still blocks submission.")
   end
 

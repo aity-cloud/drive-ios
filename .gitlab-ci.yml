@@ -313,6 +313,20 @@ check:appstore:
     - bundle install
     - bundle exec fastlane ios aity_check_appstore
 
+# Listing text + screenshots -> the production App Store record, no binary.
+# fastlane/metadata and fastlane/screenshots are the source of truth; this is
+# the only way they reach App Store Connect between releases (promote uploads
+# them too, after the IPA). A listing fix is not a release, hence main as well
+# as tags. Read-only on the Mac apart from gems: nothing is built or signed.
+publish:listing:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_publish_listing
+
 check:app-groups:
   extends: .macos
   stage: publish-staging
