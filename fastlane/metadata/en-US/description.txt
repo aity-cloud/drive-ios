@@ -1,0 +1,26 @@
+Aity Drive keeps your files with you - on your iPhone, your iPad, your Mac and your PC, always the current version.
+
+Open a document you were editing on your laptop, on your phone, on the train. Everything you put in Aity Drive is there, and everything you change is saved back.
+
+WHAT YOU GET
+
+- Your files, offline. Mark anything to keep on the device and it is there with no signal.
+- Real folders and spaces. Organise work the way you already think about it, not the way an app insists.
+- Share a link. Send a file to someone who does not use Aity Drive, with an expiry date and a password if you want one.
+- Photos, kept. Turn on automatic upload and the pictures you take are in your Drive before you get home.
+- Files app integration. Aity Drive appears alongside iCloud Drive, so any app that can open a file can open yours.
+- Open in place. Edit a document straight from Drive in the app you already use.
+
+BUILT FOR WORK
+
+Aity Drive is the file half of the Aity workspace, beside Aity Business Mail. Your organisation's administrator decides who can see what, and your files stay on infrastructure operated in Romania by AITY CLOUD SRL.
+
+Sign in with the account you already use for Aity - the same one, with the same password and the same two-factor step.
+
+REQUIRES AN ACCOUNT
+
+Aity Drive needs an Aity workspace account. It is not a standalone storage service and there is no sign-up in the app.
+
+OPEN SOURCE
+
+Aity Drive is built on the ownCloud desktop and mobile clients and is distributed under the GNU General Public License version 3. The complete corresponding source is linked from Settings.

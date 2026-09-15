@@ -683,16 +683,30 @@ platform :ios do
   lane :build_production_appstore do
     result = aity_build_signed_ipa(expected_env: "production")
 
+    # The listing text is FILES in this Factory (fastlane/metadata), not
+    # clicks in App Store Connect, so a release is reproducible and reviewable
+    # like everything else. Screenshots are uploaded only once they exist -
+    # they are captured on the Mac builder, see
+    # meta/docs/runbooks/app-store-screenshots.md - so this lane is useful
+    # before and after that job.
+    shots = Dir.glob("fastlane/screenshots/*/*.png")
+    UI.important("no screenshots yet - uploading metadata only") if shots.empty?
+
     deliver(
       api_key: result[:api_key],
       app_identifier: aity_ids("production")[:app],
-      skip_screenshots: true,
-      skip_metadata: true,
+      skip_metadata: false,
+      skip_screenshots: shots.empty?,
+      overwrite_screenshots: !shots.empty?,
+      # submit_for_review stays FALSE on purpose: App Privacy answers and
+      # pricing cannot be set through any API, so a submission from here
+      # would be rejected. `check:appstore` lists what is left.
       submit_for_review: false,
       precheck_include_in_app_purchases: false,
       force: true
     )
-    UI.success("Production build #{result[:build_number]} uploaded to App Store Connect - submit for review there")
+    UI.success("Production build #{result[:build_number]} and the listing metadata are in App Store Connect")
+    UI.message("Run `check:appstore` for what still blocks submission.")
   end
 
   desc "Production Environment IPA on TestFlight - the PRE-PROD channel."
