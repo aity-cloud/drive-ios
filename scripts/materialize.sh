@@ -116,6 +116,12 @@ while IFS='|' read -r src rel; do
         # directory must exist upstream (a missing parent means upstream
         # moved the mechanism this Overlay hooks into).
         parent="$(dirname "${rel}")"
+        # The screenshot set is recipe, not overlay: upstream ships none and
+        # deliver reads the directory from our fastlane/, so the mechanism it
+        # hooks into is fastlane/ itself (2026-09-15, first screenshot set).
+        case "${rel}" in
+            fastlane/screenshots/*) parent="fastlane" ;;
+        esac
         if git -C "${TREE}" cat-file -e "HEAD:${rel}" 2>/dev/null; then
             echo "check: replaces upstream file   ${rel}"
         elif [ "${parent}" = "." ] || git -C "${TREE}" cat-file -e "HEAD:${parent}" 2>/dev/null; then
