@@ -698,15 +698,17 @@ platform :ios do
   # promote (after the IPA) and publish:listing (on its own): a listing fix
   # or a new screenshot set is not a release and must not need one.
   private_lane :aity_deliver_listing do |options|
-    # Ruby's cwd in a lane is <tree>/fastlane, not the tree - a glob rooted at
-    # "fastlane/screenshots" never matched and the promote lane silently
-    # uploaded metadata only (found 2026-09-15, first screenshot set). And
-    # __dir__ is "." in a Fastfile, so the paths must be EXPANDED, not
-    # joined: deliver resolved a relative "./metadata" against the tree,
-    # found nothing and reported success with the record untouched (same
-    # day, one run later - check:appstore is what caught it).
-    metadata_path = File.expand_path("metadata", __dir__)
-    screenshots_path = File.expand_path("screenshots", __dir__)
+    # Read from the FACTORY, not from the materialised tree: the tree's
+    # fastlane/metadata and fastlane/screenshots are upstream's (dozens of
+    # ownCloud locales, their texts, their shots) with ours copied on top.
+    # deliver refuses the directory outright for the locale names it does
+    # not know, and had it not, every other locale of the listing would have
+    # become ownCloud's (2026-09-15, first screenshot set). Absolute paths
+    # on purpose: __dir__ is "." in a Fastfile and deliver resolves a
+    # relative path against the tree, found nothing there and reported
+    # success with the record untouched (same day - check:appstore caught it).
+    metadata_path = File.join(FACTORY_ROOT, "fastlane", "metadata")
+    screenshots_path = File.join(FACTORY_ROOT, "fastlane", "screenshots")
     shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
 
