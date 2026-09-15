@@ -327,6 +327,17 @@ publish:listing:
     - bundle install
     - bundle exec fastlane ios aity_publish_listing
 
+# The same listing on the STAGING record (tech.aity.drive.staging), so the
+# developer panel reads properly; that record is never submitted for review.
+publish:listing-staging:
+  extends: .macos
+  stage: publish-staging
+  script:
+    - bash scripts/materialize.sh staging
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_publish_listing
+
 check:app-groups:
   extends: .macos
   stage: publish-staging
