@@ -729,7 +729,11 @@ platform :ios do
       skip_binary_upload: true,
       # Uploads always target the editable version, never touch its number.
       skip_app_version_update: true,
-      skip_metadata: false,
+      # AITY_LISTING_SKIP_METADATA=true uploads the screenshots alone. deliver's
+      # metadata pass ends by reading the version's App Review Information and
+      # dies with "No data" on a record where nobody has filled that form yet
+      # (both staging records, 2026-09-16); the screenshots do not need it.
+      skip_metadata: ENV["AITY_LISTING_SKIP_METADATA"] == "true",
       skip_screenshots: shots.empty?,
       overwrite_screenshots: !shots.empty?,
       # submit_for_review stays FALSE on purpose: App Privacy answers and
