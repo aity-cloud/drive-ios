@@ -70,6 +70,15 @@ lint:
     # tree (--check). The staging run reuses the production clone.
     - bash scripts/materialize.sh production --check
     - bash scripts/materialize.sh staging --check
+    # The code compares Info.plist identifiers against literals; build 60
+    # shipped `com.Aity Drive.background-refresh-task` and lost background
+    # refresh. The directives are stripped the way the lane strips them.
+    - |
+      sed -i -e '/#ifndef/d' -e '/#endif/d' build/upstream/ownCloud/Resources/Info.plist
+      python3 scripts/debrand-strings.py build/upstream "Aity Drive" tech.aity.drive >/dev/null
+      if find build/upstream -name Info.plist -exec grep -Hn -e 'Aity Drive\.' -e '\.Aity Drive' {} +; then
+        echo "debrand rewrote an identifier"; exit 1
+      fi
 
 # The XCUITest sources, type-checked without Xcode. `ruby -c`-grade parsing is
 # not enough: `swiftc -parse` never resolves a name, so a call to a helper that
@@ -239,7 +248,9 @@ diagnose:crash-reports:
       done
       [ "$found" -gt 0 ] || echo "NO crash report mentions tech.aity.drive - the app was terminated WITHOUT crashing (look at jetsam/appstate, not a stack)."
       echo "=== simulator jetsam / termination events ==="
-      log show --last 30m --style compact --predicate 'process == "SpringBoard" OR eventMessage CONTAINS "tech.aity.drive"' 2>/dev/null | grep -i -E 'termin|jetsam|watchdog|kill' | tail -25 || echo "(log show unavailable)"
+      log show --last 30m --style compact \
+        --predicate 'process == "SpringBoard" OR eventMessage CONTAINS "tech.aity.drive"' 2>/dev/null |
+        grep -i -E 'termin|jetsam|watchdog|kill' | tail -25 || echo "(log show unavailable)"
 
 measure:smoke-flakiness:
   extends: .macos

@@ -284,3 +284,35 @@ and worked, while every signed store build was broken. Any future identity
 change that lives only in the signing path has the same blind spot - the
 account-journey smoke cannot see it.
 
+
+## App Review 1.0 (60): background modes and identifiers (2026-10-08)
+
+The rejection, the answers and the device-recording procedure live in
+`fastlane/REVIEW.md`. Traps it uncovered:
+
+- **Upstream declares `location` and `audio` for everyone.** `location`
+  only backs the "Background uploads (Lab Version)" switch (visit monitoring
+  as a wake-up for photo upload); `DISABLE_BACKGROUND_LOCATION` in
+  `build.flags` removes it with the code, the strings and the mode. `audio`
+  is real media playback and stays; App Review wants a physical-device
+  recording of it, which no runner can make (the mini has no iPhone).
+- **Debranding must never touch an identifier.** `debrand-strings.py`
+  turned `com.owncloud.background-refresh-task` into
+  `com.Aity Drive.background-refresh-task` in build 60, which disabled
+  background refresh, the Files "Share" action and state restoration while
+  every smoke stayed green. Reverse-DNS values are skipped now and `lint`
+  greps the debranded tree for the app name inside an identifier.
+- **The compiled IPA is the truth, and it is retained.** The
+  `publish:*-testflight` artifacts keep the IPA for three months:
+  `glab api projects/aity-cloud%2Fdrive%2Fios/jobs/<id>/artifacts`, unzip,
+  read `Payload/ownCloud.app/Info.plist`. That is how build 60 was audited.
+- **deliver deletes the App Review attachment it is not given.** Its
+  metadata pass removes every attachment unless `app_review_attachment_file`
+  is set, so `aity_deliver_listing` sends the recording from
+  `fastlane/review/`. It also sets `demo_account_required=false` when review
+  information arrives without demo credentials - which is why the review
+  notes are NOT in `fastlane/metadata/review_information`: the demo password
+  exists only in App Store Connect.
+- **`materialize.sh` reused the ios-sdk submodule dirty.** A reused tree
+  kept the previous run's debranded SDK strings; the submodule is reset now.
+  CI was not affected (the runner cleans the checkout).

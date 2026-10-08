@@ -25,8 +25,8 @@ NOT used for tracking.
 
 ## What is deliberately NOT declared, and the condition that keeps it so
 
-- **Location**: the app can use location changes on the device as a trigger
-  for background photo upload; the location never leaves the phone.
+- **Location**: not used at all. Builds after 60 compile out upstream's
+  location-triggered upload (`DISABLE_BACKGROUND_LOCATION`, App Review 2.5.4).
 - **Diagnostics - Crash Data**: crash reporting is opt-in ("Enable
   diagnostics") and the report is sent by the user themselves through Mail;
   that meets Apple's optional-disclosure exemption (optional, infrequent,

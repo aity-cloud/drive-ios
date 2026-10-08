@@ -719,6 +719,11 @@ platform :ios do
     screenshots_path = File.join(FACTORY_ROOT, "fastlane", "screenshots")
     shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
+    # deliver's metadata pass DELETES every App Review attachment it is not
+    # given (deliver 2.240.1, review_attachment_file), so the device recording
+    # App Review asked for lives in the repo and is re-sent on every push.
+    attachment = Dir.glob(File.join(FACTORY_ROOT, "fastlane", "review", "*.{mov,mp4}")).first
+    UI.important("no recording in fastlane/review - deliver removes any App Review attachment") if attachment.nil?
 
     deliver(
       api_key: options[:api_key],
@@ -734,6 +739,7 @@ platform :ios do
       # dies with "No data" on a record where nobody has filled that form yet
       # (both staging records, 2026-09-16); the screenshots do not need it.
       skip_metadata: ENV["AITY_LISTING_SKIP_METADATA"] == "true",
+      app_review_attachment_file: attachment,
       skip_screenshots: shots.empty?,
       overwrite_screenshots: !shots.empty?,
       # submit_for_review stays FALSE on purpose: App Privacy answers and

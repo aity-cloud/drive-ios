@@ -10,7 +10,10 @@
 //      app ever launched (a spinner that stops is not a file list),
 //   3. create a folder from the app, see it appear,
 //   4. delete it from the app, see it go,
-//   5. leave staging exactly as it was found.
+//   5. play an audio file and go Home: playback keeps the app running in the
+//      background (the UIBackgroundModes `audio` declaration App Review asked
+//      about, 2.5.4) - simulator evidence only, never the device recording,
+//   6. leave staging exactly as it was found.
 //
 // WHY THE BROWSER SHEET IS DRIVEN DIRECTLY. Three cheaper routes were
 // investigated first and all three are dead at this Pin - the reasoning is in
@@ -66,6 +69,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		let runID = UUID().uuidString.prefix(8).lowercased()
 		let seededFile = "aity-smoke-\(runID).txt"
 		let createdFolder = "aity-smoke-folder-\(runID)"
+		let audioFile = "aity-smoke-audio-\(runID).wav"
 
 		let token = try XCTContext.runActivity(named: "Get a harness token (password grant, client `drive`)") { _ in
 			try server.token()
@@ -75,7 +79,11 @@ final class AccountJourneySmokeTests: XCTestCase {
 		}
 		let space = personal.webDAVURL
 		_ = try XCTContext.runActivity(named: "Seed \(seededFile) into the personal space") { _ in
-			try server.putFile(named: seededFile, contents: "aity drive ios smoke \(runID)\n",
+			try server.putFile(named: seededFile, contents: Data("aity drive ios smoke \(runID)\n".utf8),
+			                   inSpace: space, token: token)
+		}
+		_ = try XCTContext.runActivity(named: "Seed \(audioFile) into the personal space") { _ in
+			try server.putFile(named: audioFile, contents: Self.toneWAV(seconds: 120), contentType: "audio/wav",
 			                   inSpace: space, token: token)
 		}
 
@@ -84,6 +92,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		addTeardownBlock {
 			server.delete(seededFile, inSpace: space, token: token)
 			server.delete(createdFolder, inSpace: space, token: token)
+			server.delete(audioFile, inSpace: space, token: token)
 		}
 
 		// --- Launch, with the consent alert turned off via the SDK's `oc:`
@@ -194,6 +203,44 @@ final class AccountJourneySmokeTests: XCTestCase {
 			"the folder deleted in the app is still on the server"
 		)
 		attach(app, named: "after-folder-delete")
+
+		// --- Background audio. Without the `audio` mode, or with playback
+		// stopped, iOS suspends the app once the background-task grace period
+		// (about 30 s) runs out; still running after 45 s means the audio kept
+		// it alive.
+		XCTContext.runActivity(named: "Play \(audioFile), then go Home") { _ in
+			XCTAssertTrue(waitForCell(app, named: audioFile, timeout: 60),
+			              "the seeded audio file is not in the list\n\n\(hierarchy(app))")
+			cell(app, named: audioFile).tap()
+			sleep(10)
+			trace("player before Home: \(visibleLabels(app))")
+			attach(app, named: "audio-playing")
+			XCUIDevice.shared.press(.home)
+		}
+		sleep(45)
+		attachBrowser(named: "home-screen-45s-after-leaving-the-player")
+		XCTAssertEqual(app.state, .runningBackground,
+		               "45 s after Home the app is not running in the background (state \(app.state.rawValue)) - " +
+		               "background audio did not keep playing")
+		app.activate()
+	}
+
+	/// A 440 Hz beep every other half second, 8 kHz mono PCM - our own sound,
+	/// nothing licensed.
+	private static func toneWAV(seconds: Int) -> Data {
+		let rate = 8000
+		var pcm = Data()
+		for i in 0..<(rate * seconds) {
+			let t = Double(i) / Double(rate)
+			let sample = Int(t * 2) % 2 == 0 ? Int16(sin(2 * Double.pi * 440 * t) * 8000) : 0
+			withUnsafeBytes(of: sample.littleEndian) { pcm.append(contentsOf: $0) }
+		}
+		var wav = Data("RIFF".utf8)
+		let le32 = { (v: Int) in withUnsafeBytes(of: UInt32(v).littleEndian) { Data($0) } }
+		let le16 = { (v: Int) in withUnsafeBytes(of: UInt16(v).littleEndian) { Data($0) } }
+		wav += le32(36 + pcm.count) + Data("WAVEfmt ".utf8) + le32(16) + le16(1) + le16(1)
+		wav += le32(rate) + le32(rate * 2) + le16(2) + le16(16) + Data("data".utf8) + le32(pcm.count) + pcm
+		return wav
 	}
 
 	// MARK: - Wizard

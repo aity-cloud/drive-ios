@@ -13,6 +13,10 @@ Rules:
     (usually the English source text); rewriting it breaks the lookup and
     the UI falls back to showing the raw key.
   - Info.plist display names and URL-type names are rewritten too.
+  - Reverse-DNS identifiers (`com.owncloud.background-refresh-task`) are
+    never rewritten: the code compares against the literal, and build 60
+    shipped `com.Aity Drive.background-refresh-task`, which silently broke
+    background refresh, the Files "Share" action and state restoration.
   - Framework, executable and class names are LEFT ALONE deliberately:
     they are the upstream software's internal component names, not
     branding shown to a user, and renaming them would mean patching half
@@ -31,8 +35,11 @@ from pathlib import Path
 MARKS = re.compile(r"ownCloud", re.IGNORECASE)
 
 
+IDENTIFIER = re.compile(r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
+
+
 def rewrite(value: str, app_name: str) -> str:
-    return MARKS.sub(app_name, value)
+    return value if IDENTIFIER.fullmatch(value) else MARKS.sub(app_name, value)
 
 
 # Keys whose value is an IDENTIFIER, not display text: rewriting them with
@@ -56,16 +63,18 @@ def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str
                 suffix = value.rsplit(".", 1)[-1] if "." in value else "app"
                 obj[key] = f"{bundle_id}.{suffix}" if bundle_id else value
                 changed.append(f"{path}/{key}")
-            elif isinstance(value, str) and MARKS.search(value):
-                obj[key] = rewrite(value, app_name)
-                changed.append(f"{path}/{key}")
+            elif isinstance(value, str):
+                if rewrite(value, app_name) != value:
+                    obj[key] = rewrite(value, app_name)
+                    changed.append(f"{path}/{key}")
             else:
                 walk_plist(value, app_name, changed, f"{path}/{key}", bundle_id)
     elif isinstance(obj, list):
         for index, value in enumerate(obj):
-            if isinstance(value, str) and MARKS.search(value):
-                obj[index] = rewrite(value, app_name)
-                changed.append(f"{path}[{index}]")
+            if isinstance(value, str):
+                if rewrite(value, app_name) != value:
+                    obj[index] = rewrite(value, app_name)
+                    changed.append(f"{path}[{index}]")
             else:
                 walk_plist(value, app_name, changed, f"{path}[{index}]", bundle_id)
 
