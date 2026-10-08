@@ -96,7 +96,7 @@
 	<!-- Build-time keys, consumed by the fastlane lanes exactly as
 	     upstream's build_ipa_in_house consumes them. -->
 	<key>build.flags</key>
-	<string>DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP</string>
+	<string>DISABLE_APPSTORE_LICENSING DISABLE_PLAIN_HTTP DISABLE_BACKGROUND_LOCATION</string>
 	<key>build.custom-app-scheme</key>
 	<string>aitydrive-app</string>
 	<key>build.custom-auth-scheme</key>
