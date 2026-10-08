@@ -77,6 +77,7 @@ else
     # starts from the pristine Pin.
     git -C "${TREE}" checkout -- .
     git -C "${TREE}" clean -fd --quiet
+    git -C "${TREE}" submodule foreach --quiet 'git checkout -- . && git clean -fd --quiet'
 fi
 
 # ios-sdk submodule at the commit the Pin records (not a branch, not a tag
@@ -117,13 +118,14 @@ while IFS='|' read -r src rel; do
         # moved the mechanism this Overlay hooks into).
         parent="$(dirname "${rel}")"
         # The store listing is recipe, not overlay: deliver reads
-        # fastlane/metadata and fastlane/screenshots from the FACTORY (see the
+        # fastlane/metadata, fastlane/screenshots and the App Review attachment
+        # in fastlane/review from the FACTORY (see the
         # Fastfile), so the only upstream mechanism they hook into is
         # fastlane/ itself. Upstream ships neither a screenshot set nor any
         # locale but en-US (2026-09-15, first screenshot set and the Romanian
         # listing).
         case "${rel}" in
-            fastlane/metadata/*|fastlane/screenshots/*) parent="fastlane" ;;
+            fastlane/metadata/*|fastlane/screenshots/*|fastlane/review/*) parent="fastlane" ;;
         esac
         if git -C "${TREE}" cat-file -e "HEAD:${rel}" 2>/dev/null; then
             echo "check: replaces upstream file   ${rel}"
