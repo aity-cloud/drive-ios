@@ -4,3 +4,5 @@
 brew "xcodegen"   # generates smoke/AityDriveSmoke.xcodeproj from project.yml
 brew "xcbeautify"  # gym pipes xcodebuild through it; a Homebrew binary is on PATH
                    # for the plain `sh` gym shells out to, which a bundled gem is not
+brew "imagemagick" # fastlane-plugin-appicon renders AppIcon.appiconset through mini_magick;
+                   # the MacBook Air had it on the host, the mini does not (2026-10-08)
