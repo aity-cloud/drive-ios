@@ -30,6 +30,8 @@ struct StagingServer {
 	let issuer: URL
 	let username: String
 	let password: String
+	/// Base32 Authenticator App seed; nil until the realm requires a second factor.
+	let totpSecret: String?
 
 	enum ServerError: Error, CustomStringConvertible {
 		case transport(String)
@@ -110,15 +112,28 @@ struct StagingServer {
 	// MARK: - The three things the test needs
 
 	/// Access token for the harness. Password grant on the `drive` client, as
-	/// Tier 1 does; the realm allows it for that client only.
+	/// Tier 1 does: the client the realm keeps direct grants on for these
+	/// harnesses.
 	func token() throws -> String {
-		let (status, data) = try form(issuer.appendingPathComponent("protocol/openid-connect/token"), [
+		var fields = [
 			"client_id": "drive",
 			"grant_type": "password",
 			"scope": "openid profile email",
 			"username": username,
 			"password": password,
-		])
+		]
+		var (status, data) = (0, Data())
+		for _ in 0..<(totpSecret == nil ? 1 : 3) {
+			if let totpSecret {
+				guard let code = TOTP.freshCode(secret: totpSecret) else {
+					throw ServerError.malformed("AITY_CONTRACT_TOTP_SECRET is not a base32 seed")
+				}
+				fields["totp"] = code
+			}
+			(status, data) = try form(issuer.appendingPathComponent("protocol/openid-connect/token"), fields)
+			// Another job sharing the account may have spent this step's code.
+			if status != 400 && status != 401 { break }
+		}
 		guard status == 200 else {
 			throw ServerError.http(status, String(data: data, encoding: .utf8) ?? "")
 		}
