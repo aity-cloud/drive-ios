@@ -96,6 +96,16 @@ def aity_require_env(vars)
   )
 end
 
+# The compiled Info.plist is what App Review reads (fastlane/REVIEW.md).
+def aity_assert_background_modes(info_plist)
+  out = `plutil -extract UIBackgroundModes json -o - '#{info_plist}'`
+  modes = $?.success? ? JSON.parse(out) : []
+  location = `plutil -p '#{info_plist}'`.scan(/NSLocation\w+/)
+  return if modes == ["fetch"] && location.empty?
+
+  UI.user_error!("#{info_plist}: UIBackgroundModes #{modes}, location keys #{location} - want [\"fetch\"] and none")
+end
+
 platform :ios do
   # ---------------------------------------------------------------------
   # Identity rewriting - transcription of upstream build_ipa_in_house
@@ -152,6 +162,14 @@ platform :ios do
       sh "sed '/#ifndef DISABLE_PLAIN_HTTP/,/#endif/d' ../ownCloud/Resources/Info.plist >../ownCloud/Resources/Info.plist.mod"
       sh "mv ../ownCloud/Resources/Info.plist.mod ../ownCloud/Resources/Info.plist"
     end
+
+    # Not upstream: the `audio` background mode has no flag (App Review
+    # 2.5.4, spec decision 19). A Pin that moves the entry must fail here.
+    info_plist = "../ownCloud/Resources/Info.plist"
+    audio_mode = %r{(<key>UIBackgroundModes</key>\s*<array>(?:(?!</array>).)*?)^\s*<string>audio</string>\n}m
+    plist_text = File.read(info_plist)
+    UI.user_error!("no `audio` entry in UIBackgroundModes of #{info_plist} - the Pin moved it, fix the removal") unless plist_text.match?(audio_mode)
+    File.write(info_plist, plist_text.sub(audio_mode, '\1'))
 
     # Upstream: URL scheme rewriting via the octype markers in
     # ownCloud/Resources/Info.plist (update_url_schemes cannot reach the
@@ -472,6 +490,12 @@ platform :ios do
         { method: "app-store", provisioningProfiles: profile_map }
     )
 
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      sh "unzip -q '#{lane_context[SharedValues::IPA_OUTPUT_PATH]}' 'Payload/*.app/Info.plist' -d '#{dir}'"
+      aity_assert_background_modes(Dir.glob("#{dir}/Payload/*.app/Info.plist").first)
+    end
+
     { api_key: api_key, env: env, build_number: build_number }
   end
 
@@ -535,6 +559,7 @@ platform :ios do
       app_path = apps.first
     end
     UI.success("Simulator app: #{app_path}")
+    aity_assert_background_modes(File.join(app_path, "Info.plist"))
 
     # Dedicated simulator: created on demand, reused across runs.
     sim_name = ENV["AITY_SMOKE_SIMULATOR"] || "aity-drive-smoke"
@@ -720,10 +745,9 @@ platform :ios do
     shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
     # deliver's metadata pass DELETES every App Review attachment it is not
-    # given (deliver 2.240.1, review_attachment_file), so the device recording
-    # App Review asked for lives in the repo and is re-sent on every push.
+    # given (deliver 2.240.1, review_attachment_file), so an attachment lives
+    # in fastlane/review and is re-sent on every push.
     attachment = Dir.glob(File.join(FACTORY_ROOT, "fastlane", "review", "*.{mov,mp4}")).first
-    UI.important("no recording in fastlane/review - deliver removes any App Review attachment") if attachment.nil?
 
     deliver(
       api_key: options[:api_key],

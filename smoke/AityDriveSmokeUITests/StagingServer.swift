@@ -157,11 +157,10 @@ struct StagingServer {
 	}
 
 	@discardableResult
-	func putFile(named name: String, contents: Data, contentType: String = "text/plain",
-	             inSpace space: URL, token: String) throws -> Int {
+	func putFile(named name: String, contents: String, inSpace space: URL, token: String) throws -> Int {
 		let (status, data) = try authorized("PUT", space.appendingPathComponent(name), token: token,
-		                                    body: contents,
-		                                    headers: ["Content-Type": contentType])
+		                                    body: contents.data(using: .utf8),
+		                                    headers: ["Content-Type": "text/plain"])
 		guard status == 201 || status == 204 else {
 			throw ServerError.http(status, String(data: data, encoding: .utf8) ?? "")
 		}
