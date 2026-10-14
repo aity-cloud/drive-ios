@@ -66,6 +66,10 @@ each item before anything is published:
    (empty `branding.url-documentation`), and the locked profile skipping
    the URL step all follow from reading the Pin's source; screenshots on
    Mac day decide whether `cssRecords` tuning is needed.
+9. **The `audio` removal and the compiled-plist check** (2026-10-14): the
+   removal is proven on Linux against the Pin's `Info.plist` (with and
+   without the location block), never in a build; the `plutil` read-back
+   in both lanes has not run on the Mac yet.
 
 When an item is verified, move it from this list into the log below with
 the date and what was found.
@@ -287,15 +291,20 @@ account-journey smoke cannot see it.
 
 ## App Review 1.0 (60): background modes and identifiers (2026-10-08)
 
-The rejection, the answers and the device-recording procedure live in
+The rejection, the resubmission and the answers live in
 `fastlane/REVIEW.md`. Traps it uncovered:
 
 - **Upstream declares `location` and `audio` for everyone.** `location`
   only backs the "Background uploads (Lab Version)" switch (visit monitoring
   as a wake-up for photo upload); `DISABLE_BACKGROUND_LOCATION` in
   `build.flags` removes it with the code, the strings and the mode. `audio`
-  is real media playback and stays; App Review wants a physical-device
-  recording of it, which no runner can make (the mini has no iPhone).
+  has no flag: `aity_apply_identity` deletes the entry from the text of
+  `Info.plist` (before any `set_info_plist_value`, which loses the
+  `#ifndef` blocks) and fails when a Bump moves it. It was dropped rather
+  than proven with a physical-device recording (2026-10-13, spec decision
+  19); media plays in the foreground only. Both build lanes read the
+  compiled `Info.plist` back and fail on anything but `[fetch]` or on an
+  `NSLocation*` key.
 - **Debranding must never touch an identifier.** `debrand-strings.py`
   turned `com.owncloud.background-refresh-task` into
   `com.Aity Drive.background-refresh-task` in build 60, which disabled
@@ -308,9 +317,10 @@ The rejection, the answers and the device-recording procedure live in
   read `Payload/ownCloud.app/Info.plist`. That is how build 60 was audited.
 - **deliver deletes the App Review attachment it is not given.** Its
   metadata pass removes every attachment unless `app_review_attachment_file`
-  is set, so `aity_deliver_listing` sends the recording from
-  `fastlane/review/`. It also sets `demo_account_required=false` when review
-  information arrives without demo credentials - which is why the review
+  is set, so `aity_deliver_listing` sends any `.mov`/`.mp4` in
+  `fastlane/review/` (none since the resubmission). It also sets
+  `demo_account_required=false` when review information arrives without
+  demo credentials - which is why the review
   notes are NOT in `fastlane/metadata/review_information`: the demo password
   exists only in App Store Connect.
 - **`materialize.sh` reused the ios-sdk submodule dirty.** A reused tree
