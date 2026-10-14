@@ -745,10 +745,9 @@ platform :ios do
     shots = Dir.glob(File.join(screenshots_path, "*", "*.png"))
     UI.important("no screenshots yet - uploading metadata only") if shots.empty?
     # deliver's metadata pass DELETES every App Review attachment it is not
-    # given (deliver 2.240.1, review_attachment_file), so the device recording
-    # App Review asked for lives in the repo and is re-sent on every push.
+    # given (deliver 2.240.1, review_attachment_file), so an attachment lives
+    # in fastlane/review and is re-sent on every push.
     attachment = Dir.glob(File.join(FACTORY_ROOT, "fastlane", "review", "*.{mov,mp4}")).first
-    UI.important("no recording in fastlane/review - deliver removes any App Review attachment") if attachment.nil?
 
     deliver(
       api_key: options[:api_key],
