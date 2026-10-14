@@ -41,7 +41,7 @@ enum TOTP {
 		let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 		var bits = 0, buffer = 0
 		var bytes: [UInt8] = []
-		for character in text.uppercased() where character != " " && character != "=" {
+		for character in text.uppercased() where !character.isWhitespace && character != "=" {
 			guard let index = alphabet.firstIndex(of: character) else { return nil }
 			buffer = (buffer << 5 | index) & 0xffff
 			bits += 5
