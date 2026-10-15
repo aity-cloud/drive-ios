@@ -333,6 +333,8 @@ final class AccountJourneySmokeTests: XCTestCase {
 				return
 			}
 			enterOTP(code, startingAt: field)
+			// The aity form submits itself on the sixth digit.
+			if waitFor({ self.webOTPField() == nil ? true : nil }, timeout: 8) != nil { return }
 			if submitWebForm(labels: ["Verify and sign in", "Verifică și autentifică-te", "Sign in"],
 			                 until: { self.webOTPField() == nil }, timeout: 20) { return }
 		}
@@ -343,35 +345,39 @@ final class AccountJourneySmokeTests: XCTestCase {
 	/// The aity theme splits the code into six cells labelled "Digit 1 of 6"
 	/// ("Cifra 1 din 6"); the stock theme has one "One-time code" field.
 	private func webOTPField() -> XCUIElement? {
+		// Exact labels through `firstMatch.exists` first: the sheet closes the
+		// moment the code is accepted, and a bound-by-index snapshot of a
+		// process that just went away fails the test instead of answering nil.
 		for host in browserHosts {
+			if let cell = otpCell(1, in: host) { return cell }
+			guard host.webViews.firstMatch.exists else { continue }
 			let field = host.webViews.textFields.allElementsBoundByIndex.first { field in
 				let label = field.label.lowercased()
-				return label.hasPrefix("digit 1") || label.hasPrefix("cifra 1")
-					|| label.contains("one-time code") || label.contains("cod de unic")
+				return label.contains("one-time code") || label.contains("cod de unic")
 			}
 			if let field { return field }
 		}
 		return nil
 	}
 
+	private func otpCell(_ position: Int, in host: XCUIApplication) -> XCUIElement? {
+		["Digit \(position) of 6", "Cifra \(position) din 6"].lazy
+			.map { host.webViews.textFields[$0].firstMatch }
+			.first { $0.exists }
+	}
+
 	/// One digit per cell: the aity theme moves focus on every digit, and a
 	/// whole code typed into the first cell drops digits in that race.
 	private func enterOTP(_ code: String, startingAt field: XCUIElement) {
 		let label = field.label.lowercased()
-		guard label.hasPrefix("digit 1") || label.hasPrefix("cifra 1") else {
+		guard label.hasPrefix("digit 1 ") || label.hasPrefix("cifra 1 ") else {
 			field.tap()
 			field.typeText(code)
 			return
 		}
 		for (index, digit) in code.enumerated() {
 			let position = index + 1
-			let cell = browserHosts.lazy.compactMap { host in
-				host.webViews.textFields.allElementsBoundByIndex.first { cell in
-					let label = cell.label.lowercased()
-					return label.hasPrefix("digit \(position) ") || label.hasPrefix("cifra \(position) ")
-				}
-			}.first
-			guard let cell else {
+			guard let cell = browserHosts.lazy.compactMap({ self.otpCell(position, in: $0) }).first else {
 				trace("code cell \(position) is gone, the page moved on")
 				return
 			}
