@@ -75,7 +75,7 @@ public enum XCUIKeyboardKey: String {
 
 public class XCUIElement {
 	public enum ElementType { case staticText, textField, button, cell, any }
-	public enum State: UInt { case notRunning, runningBackgroundSuspended, runningBackground, runningForeground }
+	public enum State { case runningForeground, runningBackground, notRunning }
 
 	public var exists: Bool { false }
 	public var isHittable: Bool { false }
@@ -130,15 +130,8 @@ public final class XCUIApplication: XCUIElement {
 	public var launchArguments: [String] = []
 	public init(bundleIdentifier: String) {}
 	public func launch() {}
-	public func activate() {}
 	public func wait(for state: XCUIElement.State, timeout: TimeInterval) -> Bool { false }
 	public func screenshot() -> XCUIScreenshot { XCUIScreenshot() }
-}
-
-public final class XCUIDevice {
-	public enum Button { case home }
-	public static let shared = XCUIDevice()
-	public func press(_ button: Button) {}
 }
 
 public struct CGVector {
