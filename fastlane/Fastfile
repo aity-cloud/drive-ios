@@ -99,13 +99,13 @@ def aity_require_env(vars)
 end
 
 # ssh-add ignores a key file others can read and rejects one without a final
-# newline; the runner writes the file variable 0644 and the stored value ends
-# without one.
+# newline or with CRLF endings; the runner writes the file variable 0644 and
+# the stored value ends without a newline.
 def aity_with_match_git_key
   source = ENV.fetch("MATCH_GIT_PRIVATE_KEY")
   key = File.file?(source) ? File.read(source) : source
   Tempfile.create("match-git-key") do |file|
-    file.write(key.strip + "\n")
+    file.write(key.delete("\r").strip + "\n")
     file.flush
     yield file.path
   end
