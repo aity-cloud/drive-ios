@@ -279,7 +279,7 @@ Both frameworks now keep upstream's ids. They are internal - no user sees a
 framework bundle id - which is the same line already drawn for the
 executable name `ownCloud`. If a future Bump renames or removes that
 constant, this becomes safe to revisit; grep for `Bundle(identifier:` in
-the Pin (v12.7.0 has exactly one).
+the Pin (v12.7.1 has exactly one).
 
 **Why the simulator never caught it:** `build_simulator_smoke` runs
 `aity_apply_identity` but NOT `aity_apply_signing`, and the framework ids

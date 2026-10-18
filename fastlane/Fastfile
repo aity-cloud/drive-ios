@@ -4,7 +4,7 @@
 # fastlane/Fastfile and runs from INSIDE the materialised tree
 # (build/upstream). All identity rewriting below is a faithful
 # transcription of the Pin's own branding flow - the `build_ipa_in_house`
-# lane of upstream fastlane/Fastfile at v12.7.0 - using the same fastlane
+# lane of upstream fastlane/Fastfile at v12.7.1 - using the same fastlane
 # actions on the same files in the same order, driven by the same
 # Branding.plist build.* keys. We do not call their lane directly because
 # (a) it hardcodes ownCloud's team, signing identities and the
