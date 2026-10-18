@@ -5,10 +5,10 @@
 | | |
 |---|---|
 | Repository | https://github.com/owncloud/ios-app |
-| Pin | `v12.7.0` (commit `3fac7eade3e22f75ea4359718ee5eaef5ca6c018`) |
+| Pin | `v12.7.1` (commit `dd72d0dd9004a66355d3d6319c4f294e2c1043a2`) |
 | Licence | GPLv3 (App Store stance: meta ADR 0003) |
-| SDK | https://github.com/owncloud/ios-sdk as the `ios-sdk` git submodule, checked out at the commit the Pin records (`275bad5ac6c03012882e01c50d3862f93105a15a` at v12.7.0) - it has no Pin of its own |
-| Xcode | per the Pin's `.xcode-version` (26.2 at v12.7.0; requires macOS 26 on the runner) |
+| SDK | https://github.com/owncloud/ios-sdk as the `ios-sdk` git submodule, checked out at the commit the Pin records (`7648ca81835d7b0e98de84def423ec44c6708453` at v12.7.1) - it has no Pin of its own |
+| Xcode | per the Pin's `.xcode-version` (26.2 at v12.7.1; requires macOS 26 on the runner) |
 
 The Pin lives in `.gitlab-ci.yml` as `UPSTREAM_TAG` (Renovate-annotated,
 watched from `meta`). `scripts/materialize.sh <production|staging>` clones
