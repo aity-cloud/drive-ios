@@ -253,6 +253,26 @@ def aity_review_differences(review, notes)
   differences
 end
 
+# One PATCH, never resent, Apple's error body printed whole. Spaceship's
+# request methods (ReviewSubmission#submit_for_review among them) resend up to
+# five times on 403, 5xx and timeouts, and its format_errors drops error ids,
+# codes and associatedErrors paths. tunes_request_client's own Faraday
+# connection carries the token and no retry.
+def aity_review_patch_once(path, body, what)
+  response = begin
+    Spaceship::ConnectAPI.client.tunes_request_client.client.patch(path, body.to_json, "Content-Type" => "application/json")
+  rescue StandardError => e
+    UI.user_error!("No answer #{what} (#{e.class}: #{e.message}). Not retried and nothing was cancelled; " \
+                   "replaying submit:appstore-review reads what Apple did before it writes.")
+  end
+  return if (200...300).cover?(response.status)
+
+  UI.error("App Store Connect answered HTTP #{response.status} #{what}:")
+  UI.error(response.body.kind_of?(Hash) ? JSON.pretty_generate(response.body) : response.body.to_s)
+  UI.user_error!("Apple refused #{what}; it is not retried and nothing was cancelled. Fix what Apple names above, " \
+                 "then replay submit:appstore-review or press Resubmit to App Review in App Store Connect.")
+end
+
 # Already in review or approved: verify, never write. True when it was.
 def aity_review_settled(review)
   kind = review[:path][:kind]
@@ -1028,11 +1048,10 @@ platform :ios do
       item = path[:item]
       if item.state == "REJECTED"
         UI.important("AITY_REVIEW_WRITE resolve item=#{item.id} submission=#{submission.id}")
-        # Spaceship 2.240.1 has no model call for this one PATCH, and
-        # Spaceship::ConnectAPI.client has no get/post/patch of its own.
-        Spaceship::ConnectAPI.client.tunes_request_client.patch(
+        aity_review_patch_once(
           "v1/reviewSubmissionItems/#{item.id}",
-          { data: { type: "reviewSubmissionItems", id: item.id, attributes: { resolved: true } } }
+          { data: { type: "reviewSubmissionItems", id: item.id, attributes: { resolved: true } } },
+          "resolving item #{item.id}"
         )
       end
     when :new
@@ -1057,13 +1076,11 @@ platform :ios do
     end
 
     UI.important("AITY_REVIEW_WRITE submit submission=#{submission.id}")
-    begin
-      submission.submit_for_review
-    rescue StandardError => e
-      UI.error(e.message)
-      UI.user_error!("App Review refused submission #{submission.id}; it is not retried and nothing was cancelled. " \
-                     "Fix what Apple names above, then replay this job or press Resubmit to App Review in App Store Connect.")
-    end
+    aity_review_patch_once(
+      "v1/reviewSubmissions/#{submission.id}",
+      { data: { type: "reviewSubmissions", id: submission.id, attributes: { submitted: true } } },
+      "submitting #{submission.id}"
+    )
 
     last = nil
     20.times do

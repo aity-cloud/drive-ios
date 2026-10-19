@@ -349,8 +349,14 @@ run. Traps found while writing them:
 - **`Spaceship::ConnectAPI.client` has no `get`, `post` or `patch`.** They
   raise NoMethodError in 2.240.1 (`check:testflight` prints
   `<unreadable: NoMethodError>`). The raw request client is
-  `Spaceship::ConnectAPI.client.tunes_request_client`; the resolve PATCH
-  goes through it.
+  `Spaceship::ConnectAPI.client.tunes_request_client`.
+- **Spaceship resends a refused write.** Its request methods, and so
+  `ReviewSubmission#submit_for_review`, retry up to five times on 403, 5xx
+  and timeouts: one call sent `submitted: true` five times against a 403.
+  Its error formatting also drops Apple's error ids, codes and
+  `associatedErrors` paths. The resolve and the submit therefore go through
+  `tunes_request_client.client`, the Faraday connection that carries the
+  token: one request each, and a refusal prints Apple's JSON body whole.
 - **Verbose Spaceship writes response bodies into the job trace.** With
   `VERBOSE` or `SPACESHIP_DEBUG` set it logs every response, and the review
   details carry the demo password. Both lanes refuse to start with either

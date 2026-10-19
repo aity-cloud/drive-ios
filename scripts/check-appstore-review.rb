@@ -3,13 +3,17 @@
 # against a fake App Store Connect: the real fastlane/Fastfile is loaded under
 # a stdlib-only DSL shim and Spaceship is replaced by the models below, so
 # every write a lane makes is recorded and nothing reaches Apple. The lint
-# image has ruby and no gems, hence no fastlane, no json.
+# image has ruby and no gems, hence no fastlane: stdlib only.
 #
-# What it cannot see: Apple's real state transitions, Spaceship's HTTP layer
-# and timing. The first run against Apple is prepare's read-only preflight.
+# The two PATCHes the submit lane sends itself (resolve, submitted: true) go
+# through a fake of the Faraday connection, one call per HTTP request, so a
+# retry shows up as a second request. What it cannot see: Apple's real state
+# transitions and timing. The first run against Apple is prepare's read-only
+# preflight.
 
 require "digest"
 require "fileutils"
+require "json"
 require "tmpdir"
 
 REPO = File.expand_path("..", __dir__)
@@ -28,18 +32,34 @@ module UI
   end
 end
 
-class AppleError < StandardError; end
+# A request that got no answer: the connection raises, as Faraday does.
+class NoAnswer < StandardError; end
+
+# Apple's JSON:API refusal, with what Spaceship's format_errors drops: ids,
+# codes and the associatedErrors resource paths.
+def apple_refusal(status)
+  { "errors" => [{
+    "id" => "error-id-1", "status" => status.to_s, "code" => "STATE_ERROR",
+    "title" => "The request cannot be fulfilled because of the state of another resource.",
+    "detail" => "Submit for review errors found.",
+    "meta" => { "associatedErrors" => { "/v1/appInfos/info-1" => [{
+      "id" => "error-id-2", "status" => status.to_s, "code" => "STATE_ERROR.APP_PRIVACY_MISSING",
+      "title" => "App Privacy answers are missing"
+    }] } }
+  }] }
+end
 
 # A fake App Store Connect. Every write is appended to `writes`; reads return
 # the live objects, so a lane re-reading sees what its writes did.
 class World
   attr_accessor :app, :builds, :versions, :detail, :submissions, :items, :writes, :sleeps,
-                :refuse_submit, :stuck, :deliver_calls
+                :answers, :stuck, :after_submit, :deliver_calls
 
   def initialize
     @writes = []
     @sleeps = []
     @deliver_calls = []
+    @answers = []
     @app = Fake.new(id: "app-1", bundle_id: "tech.aity.drive")
     target = Fake.new(id: TARGET_BUILD, version: "80", processing_state: "VALID", expired: false,
                       uses_non_exempt_encryption: false, app: @app,
@@ -121,27 +141,42 @@ class Fake
     $world.version.app_version_state = "READY_FOR_REVIEW"
   end
 
+  # Spaceship's model call resends a refused submitted: true up to five times.
   def submit_for_review
-    $world.writes << [:submit, id]
-    if $world.refuse_submit
-      raise AppleError, "The request cannot be fulfilled because of the state of another resource. - " \
-                        "associatedErrors: App Privacy answers are missing"
-    end
-    return if $world.stuck
+    raise "ReviewSubmission#submit_for_review called - it retries at the HTTP layer"
+  end
+end
 
-    self.state = "WAITING_FOR_REVIEW"
-    self.submitted_date = "2026-10-19T12:00:00Z"
-    $world.version.app_version_state = "WAITING_FOR_REVIEW"
+Response = Struct.new(:status, :body)
+
+# The Faraday connection of tunes_request_client: one call, one HTTP request.
+# The next entry of `answers` is Apple's answer: [status, body], or a NoAnswer
+# to raise; none left means success.
+class Connection
+  def patch(path, json, headers)
+    raise "PATCH without a JSON content type" unless headers["Content-Type"] == "application/json"
+
+    body = JSON.parse(json)
+    $world.writes << [:patch, path, body]
+    answer = $world.answers.shift
+    raise answer if answer.is_a?(Exception)
+    return Response.new(*answer) if answer
+
+    if (item = $world.items.values.flatten.find { |i| path == "v1/reviewSubmissionItems/#{i.id}" })
+      item.state = "READY_FOR_REVIEW"
+      $world.version.app_version_state = "READY_FOR_REVIEW"
+    elsif (submission = $world.submissions.find { |s| path == "v1/reviewSubmissions/#{s.id}" }) && !$world.stuck
+      submission.state = "WAITING_FOR_REVIEW"
+      submission.submitted_date = "2026-10-19T12:00:00Z"
+      $world.version.app_version_state = "WAITING_FOR_REVIEW"
+      $world.after_submit&.call($world)
+    end
+    Response.new(200, { "data" => { "id" => path.split("/").last } })
   end
 end
 
 class RequestClient
-  def patch(path, body)
-    $world.writes << [:patch, path, body]
-    item = $world.items.values.flatten.find { |i| path == "v1/reviewSubmissionItems/#{i.id}" }
-    item.state = "READY_FOR_REVIEW"
-    $world.version.app_version_state = "READY_FOR_REVIEW"
-  end
+  def client = Connection.new
 end
 
 module Spaceship
@@ -231,7 +266,7 @@ def play(lane, env: {}, environment: "production")
   error = nil
   begin
     RUNNER.run(lane)
-  rescue UserError, AppleError => e
+  rescue UserError => e
     error = e.message
   ensure
     ENV.replace(saved)
@@ -272,7 +307,17 @@ EXPECTED_PREPARE_WRITES = [
   [:delete_attachment, "background-audio.mov"]
 ].freeze
 RESOLVE = [:patch, "v1/reviewSubmissionItems/item-1",
-           { data: { type: "reviewSubmissionItems", id: "item-1", attributes: { resolved: true } } }].freeze
+           { "data" => { "type" => "reviewSubmissionItems", "id" => "item-1", "attributes" => { "resolved" => true } } }].freeze
+
+def submitted(id)
+  [:patch, "v1/reviewSubmissions/#{id}", { "data" => { "type" => "reviewSubmissions", "id" => id, "attributes" => { "submitted" => true } } }]
+end
+
+# Apple's whole refusal reached the trace, not Spaceship's summary of it.
+def full_body?(log)
+  text = log.join("\n")
+  %w[error-id-1 error-id-2 STATE_ERROR.APP_PRIVACY_MISSING /v1/appInfos/info-1].all? { |part| text.include?(part) }
+end
 
 puts "check-appstore-review: the App Review lanes against a fake App Store Connect"
 
@@ -416,7 +461,7 @@ check "resubmit: resolve the rejected item, then submit that same submission" do
   world.writes.clear
   error, log = play(SUBMIT)
   expect(error.nil?, "submit failed: #{error}")
-  expect(world.writes == [RESOLVE, [:submit, SUBMISSION]], "writes were #{world.writes.inspect}")
+  expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "writes were #{world.writes.inspect}")
   submitted = receipt(log, "AITY_REVIEW_SUBMITTED")
   expect(submitted.length == 1, "want one AITY_REVIEW_SUBMITTED line, got #{submitted.inspect}")
   %W[submission=#{SUBMISSION} state=WAITING_FOR_REVIEW version_state=WAITING_FOR_REVIEW
@@ -425,20 +470,53 @@ check "resubmit: resolve the rejected item, then submit that same submission" do
   end
 end
 
+[403, 409, 500, 503].each do |status|
+  check "HTTP #{status} on submitted: true: one request, Apple's whole error body printed, no retry" do
+    world = fresh
+    play(PREPARE)
+    world.writes.clear
+    world.answers = [nil, [status, apple_refusal(status)]]
+    error, log = play(SUBMIT)
+    expect(error.to_s.include?("not retried"), "the lane did not stop as refused: #{error.inspect}")
+    expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "requests were #{world.writes.inspect}")
+    expect(full_body?(log), "Apple's error body was not printed whole: #{log.inspect}")
+    expect(receipt(log, "AITY_REVIEW_SUBMITTED").empty?, "it printed AITY_REVIEW_SUBMITTED")
+  end
+end
+
+check "submitted: true with no answer: one request, no retry, replay reads what Apple did" do
+  world = fresh
+  play(PREPARE)
+  world.writes.clear
+  world.answers = [nil, NoAnswer.new("execution expired")]
+  error, = play(SUBMIT)
+  expect(error.to_s.include?("Not retried") && error.include?("execution expired"), "message was: #{error.inspect}")
+  expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "requests were #{world.writes.inspect}")
+end
+
+check "a refused resolve: one request, the whole body printed, nothing submitted" do
+  world = fresh
+  play(PREPARE)
+  world.writes.clear
+  world.answers = [[409, apple_refusal(409)]]
+  error, log = play(SUBMIT)
+  expect(error && world.writes == [RESOLVE], "#{error.inspect} #{world.writes.inspect}")
+  expect(full_body?(log), "Apple's error body was not printed whole")
+end
+
 check "a refused submit is not retried; the replay finds the item resolved and only submits" do
   world = fresh
   play(PREPARE)
   world.writes.clear
-  world.refuse_submit = true
+  world.answers = [nil, [409, apple_refusal(409)]]
   error, log = play(SUBMIT)
   expect(error, "a refused submit did not fail the lane")
-  expect(world.writes == [RESOLVE, [:submit, SUBMISSION]], "writes were #{world.writes.inspect}")
-  expect(log.any? { |line| line.include?("App Privacy answers are missing") }, "Apple's error body was not printed")
+  expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "writes were #{world.writes.inspect}")
+  expect(full_body?(log), "Apple's error body was not printed whole")
   world.writes.clear
-  world.refuse_submit = false
   error, = play(SUBMIT)
   expect(error.nil?, "replay failed: #{error}")
-  expect(world.writes == [[:submit, SUBMISSION]], "replay writes were #{world.writes.inspect}")
+  expect(world.writes == [submitted(SUBMISSION)], "replay writes were #{world.writes.inspect}")
 end
 
 check "new: create a review submission, add version 1.0, submit" do
@@ -451,7 +529,7 @@ check "new: create a review submission, add version 1.0, submit" do
   world.writes.clear
   error, = play(SUBMIT)
   expect(error.nil?, "submit failed: #{error}")
-  expect(world.writes == [[:create_submission, "IOS"], [:add_item, "submission-new", "version-1"], [:submit, "submission-new"]],
+  expect(world.writes == [[:create_submission, "IOS"], [:add_item, "submission-new", "version-1"], submitted("submission-new")],
          "writes were #{world.writes.inspect}")
 end
 
@@ -466,7 +544,7 @@ check "draft: an empty READY_FOR_REVIEW submission gets version 1.0 and is submi
   world.writes.clear
   error, = play(SUBMIT)
   expect(error.nil?, "submit failed: #{error}")
-  expect(world.writes == [[:add_item, SUBMISSION, "version-1"], [:submit, SUBMISSION]], "writes were #{world.writes.inspect}")
+  expect(world.writes == [[:add_item, SUBMISSION, "version-1"], submitted(SUBMISSION)], "writes were #{world.writes.inspect}")
 end
 
 check "draft holding version 1.0 already: submit only" do
@@ -478,7 +556,7 @@ check "draft holding version 1.0 already: submit only" do
   play(PREPARE)
   world.writes.clear
   error, = play(SUBMIT)
-  expect(error.nil? && world.writes == [[:submit, SUBMISSION]], "#{error.inspect} #{world.writes.inspect}")
+  expect(error.nil? && world.writes == [submitted(SUBMISSION)], "#{error.inspect} #{world.writes.inspect}")
 end
 
 check "already submitted: verified, nothing written, by both lanes" do
@@ -517,10 +595,27 @@ check "a read-back that never reaches WAITING_FOR_REVIEW exits non-zero after te
   world.stuck = true
   error, log = play(SUBMIT)
   expect(error, "the lane did not fail")
-  expect(world.writes == [RESOLVE, [:submit, SUBMISSION]], "writes were #{world.writes.inspect}")
+  expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "writes were #{world.writes.inspect}")
   expect(world.sleeps.count(30) * 30 >= 600 && world.sleeps.count(30) * 30 <= 630, "read-back slept #{world.sleeps.inspect}")
   expect(receipt(log, "AITY_REVIEW_SUBMITTED").empty?, "it printed AITY_REVIEW_SUBMITTED")
   expect(error.include?("UNRESOLVED_ISSUES"), "the last state is not in the message: #{error}")
+end
+
+{
+  "the attached build changed" => ->(w) { w.version.build = w.builds[OLD_BUILD] },
+  "release became AFTER_APPROVAL" => ->(w) { w.version.release_type = "AFTER_APPROVAL" },
+  "a release date appeared" => ->(w) { w.version.earliest_release_date = "2026-11-01T08:00:00Z" }
+}.each do |name, change|
+  check "the read-back refuses WAITING_FOR_REVIEW when #{name}" do
+    world = fresh
+    play(PREPARE)
+    world.writes.clear
+    world.after_submit = change
+    error, log = play(SUBMIT)
+    expect(error, "the lane did not fail")
+    expect(world.writes == [RESOLVE, submitted(SUBMISSION)], "writes were #{world.writes.inspect}")
+    expect(receipt(log, "AITY_REVIEW_SUBMITTED").empty?, "it printed AITY_REVIEW_SUBMITTED")
+  end
 end
 
 puts
