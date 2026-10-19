@@ -22,6 +22,7 @@
 # by scripts/materialize.sh - lanes never guess, they fail if the marker or
 # the Branding.plist does not match expectations.
 
+require "digest"
 require "tempfile"
 
 default_platform(:ios)
@@ -119,6 +120,155 @@ def aity_assert_background_modes(info_plist)
   return if modes == ["fetch"] && location.empty?
 
   UI.user_error!("#{info_plist}: UIBackgroundModes #{modes}, location keys #{location} - want [\"fetch\"] and none")
+end
+
+# ---------------------------------------------------------------------------
+# App Review submission (fastlane/REVIEW.md, spec decision 20). Spaceship
+# models, never deliver: deliver 2.240.1 refuses while a submission is
+# UNRESOLVED_ISSUES, which is exactly the state of a rejected version, and its
+# metadata pass rewrites the review details and deletes attachments.
+# ---------------------------------------------------------------------------
+
+AITY_REVIEW_OPEN_STATES = %w[READY_FOR_REVIEW WAITING_FOR_REVIEW IN_REVIEW UNRESOLVED_ISSUES CANCELING COMPLETING].freeze
+AITY_REVIEW_IN_REVIEW = %w[WAITING_FOR_REVIEW IN_REVIEW].freeze
+AITY_REVIEW_NOTES = File.join(FACTORY_ROOT, "fastlane", "review", "notes.txt")
+
+# Everything read, nothing written; any surprise stops here.
+def aity_review_preflight(lane)
+  # Verbose Spaceship prints every response body into the job trace, and the
+  # review details carry the demo password.
+  %w[VERBOSE SPACESHIP_DEBUG].each do |var|
+    UI.user_error!("#{var} is set - Spaceship would log response bodies, the demo password among them. Unset it.") if ENV.key?(var)
+  end
+  env = aity_environment
+  UI.user_error!("App Review submission is production only; the tree is '#{env}'") unless env == "production"
+  aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 AITY_REVIEW_VERSION AITY_REVIEW_BUILD_NUMBER AITY_REVIEW_BUILD_ID])
+  target = {
+    version: ENV.fetch("AITY_REVIEW_VERSION"),
+    build_number: ENV.fetch("AITY_REVIEW_BUILD_NUMBER"),
+    build_id: ENV.fetch("AITY_REVIEW_BUILD_ID")
+  }
+  UI.user_error!("AITY_REVIEW_BUILD_NUMBER '#{target[:build_number]}' is not a build number") unless target[:build_number].match?(/\A\d+\z/)
+
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    filepath: File.absolute_path(ENV.fetch("ASC_KEY_P8"))
+  )
+  identifier = aity_ids(env)[:app]
+  app = Spaceship::ConnectAPI::App.find(identifier)
+  UI.user_error!("#{identifier}: no App Store Connect record") if app.nil?
+
+  build = Spaceship::ConnectAPI::Build.get(build_id: target[:build_id])
+  UI.user_error!("build #{target[:build_id]}: not found") if build.nil?
+  problems = []
+  problems << "app #{build.app&.bundle_id}" unless build.app&.id == app.id
+  problems << "platform #{build.pre_release_version&.platform}" unless build.pre_release_version&.platform == "IOS"
+  problems << "build number #{build.version}, want #{target[:build_number]}" unless build.version == target[:build_number]
+  problems << "processing #{build.processing_state}" unless build.processing_state == "VALID"
+  problems << "expired" unless build.expired == false
+  if build.uses_non_exempt_encryption.nil?
+    problems << "export compliance unanswered (answered by its owner in App Store Connect, never guessed here)"
+  elsif build.uses_non_exempt_encryption != false
+    problems << "uses non-exempt encryption"
+  end
+  UI.user_error!("build #{target[:build_id]} is not the target: #{problems.join('; ')}") unless problems.empty?
+
+  versions = app.get_app_store_versions(filter: { platform: "IOS", versionString: target[:version] }, includes: "build")
+                .select { |candidate| candidate.version_string == target[:version] }
+  UI.user_error!("#{identifier}: #{versions.length} IOS App Store versions '#{target[:version]}', want exactly one") unless versions.length == 1
+  version = versions.first
+
+  submissions = app.get_review_submissions(filter: { platform: "IOS", state: AITY_REVIEW_OPEN_STATES.join(",") })
+  items = submissions.to_h do |submission|
+    [submission.id, Spaceship::ConnectAPI::ReviewSubmissionItem.all(review_submission_id: submission.id, includes: "appStoreVersion")]
+  end
+  path = aity_review_path(lane, version, submissions, items)
+
+  # Presence only: these values are never printed and never written.
+  detail = version.fetch_app_store_review_detail
+  UI.user_error!("version #{target[:version]} has no App Review Information - it is entered in App Store Connect") if detail.nil?
+  absent = %w[demo_account_name contact_first_name contact_last_name contact_email contact_phone].select do |field|
+    detail.send(field).to_s.strip.empty?
+  end
+  absent.unshift("demo_account_required") unless detail.demo_account_required == true
+  UI.user_error!("App Review Information incomplete (#{absent.join(', ')}) - it is entered in App Store Connect") unless absent.empty?
+
+  { app: app, build: build, version: version, detail: detail, path: path, target: target }
+end
+
+# The path table of the spec: which submission this run may touch, or a stop.
+def aity_review_path(lane, version, submissions, items)
+  state = version.app_version_state
+  found = submissions.map do |submission|
+    held = items[submission.id].map { |item| "#{item.app_store_version&.id || 'not-a-version'} #{item.state}" }
+    "#{submission.id} #{submission.state} [#{held.join(', ')}]"
+  end
+  stop = lambda do |why|
+    UI.user_error!("#{why}. Version #{version.version_string} is #{state}; open IOS review submissions: " \
+                   "#{found.empty? ? 'none' : found.join('; ')}. Nothing was written.")
+  end
+
+  stop.call("More than one open review submission") if submissions.length > 1
+  submission = submissions.first
+  submission_items = submission ? items[submission.id] : []
+  stop.call("Review submission #{submission.id} is #{submission.state}") if %w[CANCELING COMPLETING].include?(submission&.state)
+  if submission_items.any? { |item| item.app_store_version&.id != version.id }
+    stop.call("Review submission #{submission.id} holds an item that is not this version")
+  end
+  item = submission_items.first
+
+  rejected = %w[REJECTED METADATA_REJECTED]
+  rejected += ["READY_FOR_REVIEW"] if lane == :submit
+  if rejected.include?(state) && submission&.state == "UNRESOLVED_ISSUES" &&
+     submission_items.length == 1 && %w[REJECTED READY_FOR_REVIEW].include?(item.state)
+    { kind: :resubmit, submission: submission, item: item, name: "resubmit:#{submission.id}" }
+  elsif %w[PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED].include?(state) && submission.nil?
+    { kind: :new, name: "new" }
+  elsif %w[PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED READY_FOR_REVIEW].include?(state) && submission&.state == "READY_FOR_REVIEW"
+    { kind: :draft, submission: submission, item: item, name: "draft:#{submission.id}" }
+  elsif AITY_REVIEW_IN_REVIEW.include?(state) && item
+    { kind: :in_review, submission: submission }
+  elsif state == "PENDING_DEVELOPER_RELEASE" && item.nil?
+    { kind: :approved }
+  else
+    stop.call("No submission path for this state")
+  end
+end
+
+def aity_review_manual?(version)
+  version.release_type == "MANUAL" && version.earliest_release_date.nil?
+end
+
+# What prepare still has to change; empty means ready for submit.
+def aity_review_differences(review, notes)
+  version = review[:version]
+  detail = review[:detail]
+  differences = []
+  differences << "build #{version.build&.version || 'none'}" unless version.build&.id == review[:target][:build_id]
+  differences << "release #{version.release_type} #{version.earliest_release_date || 'no date'}" unless aity_review_manual?(version)
+  differences << "notes" unless detail.notes.to_s.gsub("\r\n", "\n").strip == notes.strip
+  attachments = Array(detail.app_store_review_attachments)
+  differences << "#{attachments.length} attachments" unless attachments.empty?
+  differences
+end
+
+# Already in review or approved: verify, never write. True when it was.
+def aity_review_settled(review)
+  kind = review[:path][:kind]
+  return false unless %i[in_review approved].include?(kind)
+
+  version = review[:version]
+  unless version.build&.id == review[:target][:build_id] && aity_review_manual?(version)
+    UI.user_error!("Version #{version.version_string} is #{version.app_version_state} with build #{version.build&.version || 'none'}, " \
+                   "release #{version.release_type} #{version.earliest_release_date || 'no date'} - not the target. Nothing was written.")
+  end
+  tag = kind == :in_review ? "AITY_REVIEW_ALREADY_SUBMITTED" : "AITY_REVIEW_APPROVED"
+  submission = review[:path][:submission]
+  UI.success("#{tag} app=#{review[:app].id} version=#{version.version_string} version_id=#{version.id} " \
+             "version_state=#{version.app_version_state} build=#{review[:build].version} build_id=#{review[:build].id} " \
+             "release=MANUAL release_date=none#{submission ? " submission=#{submission.id} state=#{submission.state}" : ''}")
+  true
 end
 
 platform :ios do
@@ -724,8 +874,9 @@ platform :ios do
   end
 
   desc "Production Environment IPA, uploaded to App Store Connect"
-  desc "(spec pipeline stage promote; review submission is finished in"
-  desc "App Store Connect until listing metadata exists). CI-only."
+  desc "(spec pipeline stage promote), with the listing metadata. It submits"
+  desc "nothing: App Review submission is prepare:appstore-review then"
+  desc "submit:appstore-review on an exact uploaded build. CI-only."
   lane :build_production_appstore do
     result = aity_build_signed_ipa(expected_env: "production")
 
@@ -784,9 +935,9 @@ platform :ios do
       app_review_attachment_file: attachment,
       skip_screenshots: shots.empty?,
       overwrite_screenshots: !shots.empty?,
-      # submit_for_review stays FALSE on purpose: App Privacy answers and
-      # pricing cannot be set through any API, so a submission from here
-      # would be rejected. `check:appstore` lists what is left.
+      # submit_for_review stays FALSE: App Review submission is the
+      # prepare:appstore-review / submit:appstore-review pair on one exact
+      # build (spec decision 20), never a side effect of a listing push.
       submit_for_review: false,
       precheck_include_in_app_purchases: false,
       force: true
@@ -807,6 +958,130 @@ platform :ios do
     )
     aity_deliver_listing(api_key: api_key)
     UI.message("Run `check:appstore` for what still blocks submission.")
+  end
+
+  desc "Make production version AITY_REVIEW_VERSION ready for App Review with"
+  desc "build AITY_REVIEW_BUILD_ID: attach the build, MANUAL release with no"
+  desc "date, the notes of fastlane/review/notes.txt, no attachment. Touches no"
+  desc "review submission. CI-only (prepare:appstore-review)."
+  lane :aity_prepare_appstore_review do
+    review = aity_review_preflight(:prepare)
+    next if aity_review_settled(review)
+
+    version = review[:version]
+    detail = review[:detail]
+    target = review[:target]
+    notes = File.read(AITY_REVIEW_NOTES)
+    differences = aity_review_differences(review, notes)
+
+    if differences.any? { |difference| difference.start_with?("build") }
+      UI.important("AITY_REVIEW_WRITE select_build version=#{version.id} build_id=#{target[:build_id]}")
+      version.select_build(build_id: target[:build_id])
+    end
+    if differences.any? { |difference| difference.start_with?("release") }
+      UI.important("AITY_REVIEW_WRITE release_type version=#{version.id} release=MANUAL release_date=none")
+      version.update(attributes: { release_type: "MANUAL", earliest_release_date: nil })
+    end
+    if differences.include?("notes")
+      UI.important("AITY_REVIEW_WRITE notes detail=#{detail.id} notes_sha256=#{Digest::SHA256.hexdigest(notes)}")
+      detail.update(attributes: { notes: notes })
+    end
+    Array(detail.app_store_review_attachments).dup.each do |attachment|
+      UI.important("AITY_REVIEW_WRITE delete_attachment detail=#{detail.id} file=#{attachment.file_name}")
+      attachment.delete!
+    end
+
+    review[:version] = Spaceship::ConnectAPI::AppStoreVersion.get(app_store_version_id: version.id, includes: "build")
+    review[:detail] = review[:version].fetch_app_store_review_detail
+    left = aity_review_differences(review, notes)
+    UI.user_error!("Version #{target[:version]} read back still differs: #{left.join(', ')}") unless left.empty?
+
+    version = review[:version]
+    build = review[:build]
+    UI.success("AITY_REVIEW_READY app=#{review[:app].id} version=#{version.version_string} version_id=#{version.id} " \
+               "version_state=#{version.app_version_state} build=#{build.version} build_id=#{build.id} " \
+               "marketing=#{build.pre_release_version&.version} release=#{version.release_type} release_date=none " \
+               "notes_sha256=#{Digest::SHA256.hexdigest(notes)} attachments=0 demo=present contact=present " \
+               "path=#{review[:path][:name]}")
+  end
+
+  desc "Submit the version prepare:appstore-review made ready to App Review,"
+  desc "on the review submission the path table names, and read it back as"
+  desc "WAITING_FOR_REVIEW. Never edits the version, never retries a refused"
+  desc "submission. CI-only (submit:appstore-review), after Raul's go."
+  lane :aity_submit_appstore_review do
+    review = aity_review_preflight(:submit)
+    next if aity_review_settled(review)
+
+    version = review[:version]
+    target = review[:target]
+    path = review[:path]
+    differences = aity_review_differences(review, File.read(AITY_REVIEW_NOTES))
+    unless differences.empty?
+      UI.user_error!("Version #{target[:version]} is not ready (#{differences.join(', ')}) - " \
+                     "play prepare:appstore-review first. Nothing was written.")
+    end
+
+    submission = path[:submission]
+    case path[:kind]
+    when :resubmit
+      item = path[:item]
+      if item.state == "REJECTED"
+        UI.important("AITY_REVIEW_WRITE resolve item=#{item.id} submission=#{submission.id}")
+        # Spaceship 2.240.1 has no model call for this one PATCH, and
+        # Spaceship::ConnectAPI.client has no get/post/patch of its own.
+        Spaceship::ConnectAPI.client.tunes_request_client.patch(
+          "v1/reviewSubmissionItems/#{item.id}",
+          { data: { type: "reviewSubmissionItems", id: item.id, attributes: { resolved: true } } }
+        )
+      end
+    when :new
+      submission = review[:app].create_review_submission(platform: "IOS")
+      UI.important("AITY_REVIEW_WRITE create_submission submission=#{submission.id}")
+      UI.important("AITY_REVIEW_WRITE add_item submission=#{submission.id} version=#{version.id}")
+      submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
+    when :draft
+      unless path[:item]
+        UI.important("AITY_REVIEW_WRITE add_item submission=#{submission.id} version=#{version.id}")
+        submission.add_app_store_version_to_review_items(app_store_version_id: version.id)
+      end
+    end
+
+    # deliver's own wait before submitting.
+    10.times do
+      state = Spaceship::ConnectAPI::AppStoreVersion.get(app_store_version_id: version.id).app_version_state
+      break if state == "READY_FOR_REVIEW"
+
+      UI.message("Version #{target[:version]} is #{state}, waiting for READY_FOR_REVIEW")
+      sleep(15)
+    end
+
+    UI.important("AITY_REVIEW_WRITE submit submission=#{submission.id}")
+    begin
+      submission.submit_for_review
+    rescue StandardError => e
+      UI.error(e.message)
+      UI.user_error!("App Review refused submission #{submission.id}; it is not retried and nothing was cancelled. " \
+                     "Fix what Apple names above, then replay this job or press Resubmit to App Review in App Store Connect.")
+    end
+
+    last = nil
+    20.times do
+      sleep(30)
+      current = Spaceship::ConnectAPI::ReviewSubmission.get(review_submission_id: submission.id)
+      read = Spaceship::ConnectAPI::AppStoreVersion.get(app_store_version_id: version.id, includes: "build")
+      last = "submission #{current.state}, version #{read.app_version_state}, build #{read.build&.id}, " \
+             "release #{read.release_type} #{read.earliest_release_date || 'no date'}"
+      next unless AITY_REVIEW_IN_REVIEW.include?(current.state) && AITY_REVIEW_IN_REVIEW.include?(read.app_version_state) &&
+                  read.build&.id == target[:build_id] && aity_review_manual?(read)
+
+      UI.success("AITY_REVIEW_SUBMITTED submission=#{current.id} state=#{current.state} submitted=#{current.submitted_date} " \
+                 "version=#{read.version_string} version_state=#{read.app_version_state} build=#{read.build.version} " \
+                 "build_id=#{read.build.id} release=MANUAL release_date=none")
+      last = nil
+      break
+    end
+    UI.user_error!("Submission #{submission.id} did not read back as in review within ten minutes; last state: #{last}") if last
   end
 
   desc "Production Environment IPA on TestFlight - the PRE-PROD channel."

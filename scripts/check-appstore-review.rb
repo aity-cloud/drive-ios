@@ -379,6 +379,15 @@ REFUSALS.each do |name, (env, setup)|
   end
 end
 
+check "prepare refuses a resolved item: the version is submit's after a resolve" do
+  world = fresh do |w|
+    w.version.app_version_state = "READY_FOR_REVIEW"
+    w.items[SUBMISSION].first.state = "READY_FOR_REVIEW"
+  end
+  error, = play(PREPARE)
+  expect(error && world.writes.empty?, "#{error.inspect} #{world.writes.inspect}")
+end
+
 check "the path table refusal names the state it found" do
   fresh { |w| w.submission.state = "CANCELING" }
   error, = play(PREPARE)
