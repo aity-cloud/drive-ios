@@ -22,6 +22,8 @@
 # by scripts/materialize.sh - lanes never guess, they fail if the marker or
 # the Branding.plist does not match expectations.
 
+require "tempfile"
+
 default_platform(:ios)
 
 # Repo root of the FACTORY checkout (this file lives at
@@ -94,6 +96,19 @@ def aity_require_env(vars)
     "identity table in meta/specs/aity-drive-v1.md. Nothing is built or " \
     "signed from a workstation."
   )
+end
+
+# ssh-add ignores a key file others can read and rejects one without a final
+# newline or with CRLF endings; the runner writes the file variable 0644 and
+# the stored value ends without a newline.
+def aity_with_match_git_key
+  source = ENV.fetch("MATCH_GIT_PRIVATE_KEY")
+  key = File.file?(source) ? File.read(source) : source
+  Tempfile.create("match-git-key") do |file|
+    file.write(key.delete("\r").strip + "\n")
+    file.flush
+    yield file.path
+  end
 end
 
 # The compiled Info.plist is what App Review reads (fastlane/REVIEW.md).
@@ -444,13 +459,16 @@ platform :ios do
       UI.message("Signing: Xcode-managed (-allowProvisioningUpdates)")
     else
       UI.message("Signing: match profiles from the certificates repo")
-      match(
-        type: "appstore",
-        app_identifier: signed_ids,
-        team_id: team_id,
-        readonly: true,
-        api_key: api_key
-      )
+      aity_with_match_git_key do |git_key|
+        match(
+          type: "appstore",
+          app_identifier: signed_ids,
+          team_id: team_id,
+          readonly: true,
+          api_key: api_key,
+          git_private_key: git_key
+        )
+      end
     end
 
     identity_info = aity_apply_identity(team_id: team_id, build_number: build_number)
@@ -1267,14 +1285,17 @@ platform :ios do
     # exists. Needed after an App ID gains a capability - a profile minted
     # before the App Group existed does not carry it, and Xcode rejects the
     # build with "doesn't support the group.* App Group" (2026-08-27).
-    match(
-      type: "appstore",
-      app_identifier: all_signed,
-      team_id: team_id,
-      readonly: false,
-      force: ENV["AITY_MATCH_FORCE"] == "true",
-      api_key: api_key
-    )
+    aity_with_match_git_key do |git_key|
+      match(
+        type: "appstore",
+        app_identifier: all_signed,
+        team_id: team_id,
+        readonly: false,
+        force: ENV["AITY_MATCH_FORCE"] == "true",
+        api_key: api_key,
+        git_private_key: git_key
+      )
+    end
 
     unless missing_records.empty?
       UI.important("")
