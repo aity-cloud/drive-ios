@@ -10,9 +10,13 @@ has not been verified. Read `UPSTREAM.md` first for the Bump procedure.
 `aity_apply_identity` transcription (schemes rewritten, ids set on all 7
 targets, app group, appicon), the unsigned simulator build, `simctl`
 install of `tech.aity.drive.staging` ("Aity Drive (staging)"), xcodegen of
-the smoke project and the XCUITest run all execute for real. Everything
-signing-related (match, gym, pilot, deliver, notarisation) remains
-unverified - no Apple team, no certificates.
+the smoke project and the XCUITest run all execute for real.
+
+**Signed path verified** by builds 60 and 80 of `tech.aity.drive`
+(`publish:preprod-testflight` jobs 16492159632 and 17265858376): `setup_ci`,
+`match` from the certificates repo, `gym` with the App Store export map and
+the upload to TestFlight all ran, and both builds went VALID in App Store
+Connect. The App Review lanes (below) are not verified against Apple yet.
 
 
 This Factory was authored and Linux-validated on 2026-08-25 with **no
@@ -47,11 +51,9 @@ each item before anything is published:
    `com.apple.CoreSimulator.SimDeviceType.iPhone-16` device type must
    exist in the runner's simulator runtime (override with
    `AITY_SMOKE_DEVICE_TYPE`).
-5. **Everything signing/store**: `setup_ci` keychain flow, `match` against
-   `drive/certificates` (repo exists, store NOT bootstrapped - needs the
-   Apple org account, publisher-accounts.md), `pilot`/`deliver` with the
-   ASC API key, export options including our fileprovider-ui addition
-   (upstream's export map omits it - ours includes it deliberately).
+5. **Everything signing/store**: verified for the store build by builds 60
+   and 80 (above). Still unverified: `prepare:appstore-review` and
+   `submit:appstore-review`, until their first run on 1.0 (80).
 6. **Gemfile.lock on the Mac**: resolved on Linux ruby 3.2 with darwin
    platforms added (`x86_64-darwin-22`, `arm64-darwin-23`); `bundle
    install` under the runner's brew ruby may want `bundle lock
@@ -66,10 +68,10 @@ each item before anything is published:
    (empty `branding.url-documentation`), and the locked profile skipping
    the URL step all follow from reading the Pin's source; screenshots on
    Mac day decide whether `cssRecords` tuning is needed.
-9. **The `audio` removal and the compiled-plist check** (2026-10-14): the
-   removal is proven on Linux against the Pin's `Info.plist` (with and
-   without the location block), never in a build; the `plutil` read-back
-   in both lanes has not run on the Mac yet.
+9. **The `audio` removal and the compiled-plist check** (2026-10-14):
+   verified in the store lane by build 80 (job 17265858376 passed the
+   read-back; its IPA says `["fetch"]`, no `NSLocation*`). The simulator
+   lane's read-back has not run on the Mac yet.
 
 When an item is verified, move it from this list into the log below with
 the date and what was found.
@@ -326,3 +328,36 @@ The rejection, the resubmission and the answers live in
 - **`materialize.sh` reused the ios-sdk submodule dirty.** A reused tree
   kept the previous run's debranded SDK strings; the submodule is reset now.
   CI was not affected (the runner cleans the checkout).
+
+## App Review submission lanes (2026-10-19)
+
+`prepare:appstore-review` and `submit:appstore-review` submit one exact,
+already uploaded build (fastlane/REVIEW.md, spec decision 20).
+`scripts/check-appstore-review.rb` runs both against a fake App Store
+Connect in `lint`; they are UNVERIFIED against Apple until the 1.0 (80)
+run. Traps found while writing them:
+
+- **deliver cannot resubmit a rejected version.** deliver 2.240.1 refuses
+  to submit while any review submission is WAITING_FOR_REVIEW, IN_REVIEW or
+  UNRESOLVED_ISSUES, and a rejected version sits in exactly such a
+  submission; it refuses after `select_build` has already changed the
+  version. Apple's path is to resolve the rejected item
+  (`PATCH v1/reviewSubmissionItems/{id}`, `resolved: true`) and submit the
+  same submission; `submitted: true` without the resolve answers 409
+  "Version is not ready to be submitted yet". fastlane 2.241.1 has the same
+  code.
+- **`Spaceship::ConnectAPI.client` has no `get`, `post` or `patch`.** They
+  raise NoMethodError in 2.240.1 (`check:testflight` prints
+  `<unreadable: NoMethodError>`). The raw request client is
+  `Spaceship::ConnectAPI.client.tunes_request_client`.
+- **Spaceship resends a refused write.** Its request methods, and so
+  `ReviewSubmission#submit_for_review`, retry up to five times on 403, 5xx
+  and timeouts: one call sent `submitted: true` five times against a 403.
+  Its error formatting also drops Apple's error ids, codes and
+  `associatedErrors` paths. The resolve and the submit therefore go through
+  `tunes_request_client.client`, the Faraday connection that carries the
+  token: one request each, and a refusal prints Apple's JSON body whole.
+- **Verbose Spaceship writes response bodies into the job trace.** With
+  `VERBOSE` or `SPACESHIP_DEBUG` set it logs every response, and the review
+  details carry the demo password. Both lanes refuse to start with either
+  set.

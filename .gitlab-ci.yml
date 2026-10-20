@@ -64,6 +64,7 @@ lint:
     # `ruby -c` cannot see it: a comment after a backslash line-continuation
     # silently truncates the string, which faked a green smoke on 2026-08-27.
     - ruby scripts/check-fastfile.rb
+    - ruby scripts/check-appstore-review.rb
     # Full materialise of both Environments against the real Pin clone:
     # proves the tag exists, the ios-sdk submodule resolves, every patch
     # applies, and every overlay/recipe path still matches the upstream
@@ -411,6 +412,36 @@ promote:production-appstore:
   artifacts:
     paths:
       - build/upstream/*.ipa
+
+# App Review submission of one exact, already uploaded production build
+# (fastlane/REVIEW.md, spec decision 20): prepare edits the version and stops
+# at AITY_REVIEW_READY; submit runs only after Raul's go. The target is
+# reviewed source - the next submission changes these values and
+# fastlane/review/notes.txt in a merge request, never as job variables.
+# Neither job builds, signs or releases.
+.appstore-review:
+  extends: .macos
+  stage: promote
+  variables:
+    AITY_REVIEW_VERSION: "1.0"
+    AITY_REVIEW_BUILD_NUMBER: "80"
+    AITY_REVIEW_BUILD_ID: afe4e712-8825-45ce-8714-48fcc59d66e9
+
+prepare:appstore-review:
+  extends: .appstore-review
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_prepare_appstore_review
+
+submit:appstore-review:
+  extends: .appstore-review
+  script:
+    - bash scripts/materialize.sh production
+    - cd build/upstream
+    - bundle install
+    - bundle exec fastlane ios aity_submit_appstore_review
 
 # ---------------------------------------------------------------------------
 # Public Mirror (ADR 0004) - CI is the only writer.
