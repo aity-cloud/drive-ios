@@ -1,10 +1,11 @@
 # App Review - what Apple asked, what we changed, what we answer
 
-The App Review record of Aity Drive (`tech.aity.drive`). App Review
-Information (demo account, notes, attachment) is entered in App Store Connect;
-this file is the record of what was entered and why, the same way
-`PRIVACY.md` records the App Privacy answers. The demo password is never
-written here (spec decision 17: it lives only in App Store Connect).
+The App Review record of Aity Drive (`tech.aity.drive`), the same way
+`PRIVACY.md` records the App Privacy answers. The App Review notes are
+`fastlane/review/notes.txt`, set on the version by `prepare:appstore-review`.
+The demo account and the contact stay only in App Store Connect and are never
+written here (spec decision 17); the lanes check they are present and never
+print or change them.
 
 ## 1.0 (60) - rejected 2026-10-01, submission 4877e3a4-d90c-4eee-ada0-c5bee79727f6
 
@@ -71,12 +72,12 @@ never scheduled: the code registers `com.owncloud.background-refresh-task`),
 nothing) and `com.Aity Drive.captureRestoreActivityType` (window state
 restoration). Identifiers are now left alone; `lint` fails if one is touched.
 
-## 1.0 (<BUILD>) - resubmission, decided 2026-10-13
+## 1.0 (80) - resubmission, decided 2026-10-13
 
 Raul decided not to wait for App Review's answer and to remove what it
 flagged instead of arguing for it (decision 19 of
 `drive/meta/specs/aity-drive-v1.md`). Version 1.0 is resubmitted with build
-<BUILD>, set to "Manually release this version", so the release to the public
+80, set to "Manually release this version", so the release to the public
 listing stays Promote.
 
 - **4.8.** The sign-in page shows no identity-provider buttons for client
@@ -102,15 +103,49 @@ plutil -extract UIBackgroundModes json -o - Payload/*.app/Info.plist   # ["fetch
 plutil -p Payload/*.app/Info.plist | grep -c NSLocation               # 0
 ```
 
-## App Review Information - Notes (paste into App Store Connect)
+### Build 80
 
-```
-Aity Drive is the file client of the Aity business workspace (AITY CLOUD SRL, Romania). It is for existing members of an organisation's Aity workspace: accounts are created by the organisation's administrator, and there is no sign-up in the app or on the sign-in page. Use the demo account above.
+Pipeline #80 (`2960401594`), job `publish:preprod-testflight` 17265858376,
+main `a951ee9`, Pin `owncloud/ios-app` v12.7.1 (`dd72d0d`), ios-sdk
+`7648ca8`. Uploaded to TestFlight internal only. App Store Connect build id
+`afe4e712-8825-45ce-8714-48fcc59d66e9`, marketing version 12.7.1; the App
+Store version record stays `1.0`, as build 60 (12.7.0) was reviewed as
+1.0 (60).
 
-Sign-in: the app opens Aity's own sign-in page (auth.aity.tech, our self-hosted identity service) in the system browser. Enter the demo account's email, then its password. There is no third-party or social login.
+Read back from the job artifact on 2026-10-19:
 
-Background modes: fetch only, for background refresh of automatic photo upload. The app does not declare audio or location.
-```
+- `aity-drive-production-80.ipa`, sha256
+  `c3265a975d6d64d70e7b0f19780d8a2ae0b4ca4f30ca5bf7cdeaac5ce00bc8b1`;
+- `Payload/ownCloud.app/Info.plist`: `tech.aity.drive`, 12.7.1, 80,
+  `UIBackgroundModes = ["fetch"]`, no `NSLocation*` key.
+
+### Submitting it
+
+The target is reviewed source: `AITY_REVIEW_VERSION`,
+`AITY_REVIEW_BUILD_NUMBER` and `AITY_REVIEW_BUILD_ID` in `.gitlab-ci.yml`,
+and the notes file. The next submission changes them in a merge request;
+the jobs are never played with job variables.
+
+1. Play `prepare:appstore-review` on the main pipeline. It reads the build,
+   the version, the open review submissions and the review details first and
+   stops before any write on anything unexpected. Then it attaches build 80,
+   sets "Manually release this version" with no date, sets the notes from
+   the file and deletes any App Review attachment. Read its
+   `AITY_REVIEW_READY` line; expected `path=resubmit:4877e3a4-d90c-4eee-ada0-c5bee79727f6`.
+2. Raul's go, then play `submit:appstore-review`. It refuses a record that
+   prepare did not leave ready, resolves the rejected item of submission
+   4877e3a4 and resubmits that same submission, so the Resolution Center
+   thread stays on it. Read its `AITY_REVIEW_SUBMITTED` line.
+3. Raul pastes the reply below in the Resolution Center and presses Release
+   after approval.
+
+Neither job cancels or removes a submission, changes the build after
+submitting, releases, or retries a submission Apple refused.
+
+## App Review Information - Notes
+
+The notes are `fastlane/review/notes.txt`, the single source of their text;
+`prepare:appstore-review` sets them on the version and prints their sha256.
 
 ## Resolution Center reply (4877e3a4)
 
@@ -119,16 +154,16 @@ Raul pastes it; there is no API for the Resolution Center.
 ```
 Hello,
 
-Thank you for the review. Instead of the screen recording we offered earlier, we changed the app and submitted build <BUILD>.
+Thank you for the review. Instead of the screen recording we offered earlier, we changed the app and submitted build 80.
 
 Guideline 4.8 - Login Services
 The sign-in page no longer offers any third-party or social login. Aity Drive signs in only with the user's Aity workspace account, by email and password, on Aity's own identity service (auth.aity.tech, operated by AITY CLOUD SRL). Accounts are created by the customer organisation's administrator; there is no account creation in the app.
 
 Guideline 2.5.4 - audio
-The audio background mode is removed in build <BUILD>. Audio and video files play while the app is in the foreground.
+The audio background mode is removed in build 80. Audio and video files play while the app is in the foreground.
 
 Guideline 2.5.4 - location
-The location background mode is removed in build <BUILD>. The app no longer uses location at all: the background-upload trigger that needed it and all location permission strings are gone.
+The location background mode is removed in build 80. The app no longer uses location at all: the background-upload trigger that needed it and all location permission strings are gone.
 
 Kind regards,
 Raul Bag

@@ -1,0 +1,5 @@
+Aity Drive is the file client of the Aity business workspace (AITY CLOUD SRL, Romania). It is for existing members of an organisation's Aity workspace: accounts are created by the organisation's administrator, and there is no sign-up in the app or on the sign-in page. Use the demo account above.
+
+Sign-in: the app opens Aity's own sign-in page (auth.aity.tech, our self-hosted identity service) in the system browser. Enter the demo account's email, then its password. There is no third-party or social login.
+
+Background modes: fetch only, for background refresh of automatic photo upload. The app does not declare audio or location.
