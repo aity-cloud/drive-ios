@@ -772,6 +772,7 @@ platform :ios do
 
     contract_user = ENV["AITY_CONTRACT_USER"].to_s
     contract_password = ENV["AITY_CONTRACT_PASSWORD"].to_s
+    contract_totp_secret = ENV["AITY_CONTRACT_TOTP_SECRET"].to_s
     if contract_user.empty? || contract_password.empty?
       UI.important("AITY_CONTRACT_USER / AITY_CONTRACT_PASSWORD are not set - " \
                    "the account journey will skip itself and only the login-screen smoke runs")
@@ -828,6 +829,7 @@ platform :ios do
           "TEST_RUNNER_AITY_ISSUER='#{AITY_ENVIRONMENT_ISSUERS[env]}'",
           "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}'",
           "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}'",
+          "TEST_RUNNER_AITY_CONTRACT_TOTP_SECRET='#{contract_totp_secret}'",
           "xcodebuild test",
           "-project '#{smoke_dir}/AityDriveSmoke.xcodeproj'",
           "-scheme AityDriveSmokeUITests",

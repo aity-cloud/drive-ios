@@ -58,8 +58,10 @@ final class AccountJourneySmokeTests: XCTestCase {
 		let issuerURL = try URL(string: env("AITY_ISSUER", default: "https://auth.aity.works/realms/aity"))!
 		let username = try env("AITY_CONTRACT_USER")
 		let password = try env("AITY_CONTRACT_PASSWORD")
+		let totpSecret = ProcessInfo.processInfo.environment["AITY_CONTRACT_TOTP_SECRET"].flatMap { $0.isEmpty ? nil : $0 }
 
-		let server = StagingServer(baseURL: driveURL, issuer: issuerURL, username: username, password: password)
+		let server = StagingServer(baseURL: driveURL, issuer: issuerURL, username: username, password: password,
+		                           totpSecret: totpSecret)
 
 		// --- Seed. A unique name per run, so two runs never collide and a
 		// leftover from a crashed run is identifiable.
@@ -97,7 +99,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 		// --- Sign in.
 		try XCTContext.runActivity(named: "Sign in through the app's OIDC browser sheet") { activity in
 			advanceSetupWizard(app, activity: activity)
-			try signIn(app, username: username, password: password, activity: activity)
+			try signIn(app, username: username, password: password, totpSecret: totpSecret, activity: activity)
 			finishSetupWizard(app, activity: activity)
 		}
 
@@ -269,7 +271,8 @@ final class AccountJourneySmokeTests: XCTestCase {
 		return nil
 	}
 
-	private func signIn(_ app: XCUIApplication, username: String, password: String, activity: XCTActivity) throws {
+	private func signIn(_ app: XCUIApplication, username: String, password: String, totpSecret: String?,
+	                    activity: XCTActivity) throws {
 		// The realm's browser flow is IDENTITY-FIRST: page 1 asks for the email
 		// and submits with "Continue", page 2 asks for the password and submits
 		// with "Sign in". Posting both at once just redisplays page 1 - the same
@@ -311,6 +314,75 @@ final class AccountJourneySmokeTests: XCTestCase {
 		if !left {
 			attachBrowser(named: "login-step-2-stuck")
 			XCTFail("the password page never went away after submitting.\n\n" + browserHierarchies())
+			return
+		}
+
+		// The realm may ask for the Authenticator App code next; a rejected
+		// code (another job spent this step's) is retried with the next one.
+		guard waitFor({ self.webOTPField() }, timeout: 10) != nil else { return }
+		trace("one-time code page reached")
+		attachBrowser(named: "login-step-3-otp")
+		guard let totpSecret else {
+			XCTFail("the realm asks for a one-time code but AITY_CONTRACT_TOTP_SECRET is not set")
+			return
+		}
+		for _ in 0..<3 {
+			guard let field = webOTPField() else { return }
+			guard let code = TOTP.freshCode(secret: totpSecret) else {
+				XCTFail("AITY_CONTRACT_TOTP_SECRET is not a base32 seed")
+				return
+			}
+			enterOTP(code, startingAt: field)
+			// The aity form submits itself on the sixth digit.
+			if waitFor({ self.webOTPField() == nil ? true : nil }, timeout: 8) != nil { return }
+			if submitWebForm(labels: ["Verify and sign in", "Verifică și autentifică-te", "Sign in"],
+			                 until: { self.webOTPField() == nil }, timeout: 20) { return }
+		}
+		attachBrowser(named: "login-step-3-stuck")
+		XCTFail("the one-time code page never went away after submitting.\n\n" + browserHierarchies())
+	}
+
+	/// The aity theme splits the code into six cells labelled "Digit 1 of 6"
+	/// ("Cifra 1 din 6"); the stock theme has one "One-time code" field.
+	private func webOTPField() -> XCUIElement? {
+		// Exact labels through `firstMatch.exists` first: the sheet closes the
+		// moment the code is accepted, and a bound-by-index snapshot of a
+		// process that just went away fails the test instead of answering nil.
+		for host in browserHosts {
+			if let cell = otpCell(1, in: host) { return cell }
+			guard host.webViews.firstMatch.exists else { continue }
+			let field = host.webViews.textFields.allElementsBoundByIndex.first { field in
+				let label = field.label.lowercased()
+				return label.contains("one-time code") || label.contains("cod de unic")
+			}
+			if let field { return field }
+		}
+		return nil
+	}
+
+	private func otpCell(_ position: Int, in host: XCUIApplication) -> XCUIElement? {
+		["Digit \(position) of 6", "Cifra \(position) din 6"].lazy
+			.map { host.webViews.textFields[$0].firstMatch }
+			.first { $0.exists }
+	}
+
+	/// One digit per cell: the aity theme moves focus on every digit, and a
+	/// whole code typed into the first cell drops digits in that race.
+	private func enterOTP(_ code: String, startingAt field: XCUIElement) {
+		let label = field.label.lowercased()
+		guard label.hasPrefix("digit 1 ") || label.hasPrefix("cifra 1 ") else {
+			field.tap()
+			field.typeText(code)
+			return
+		}
+		for (index, digit) in code.enumerated() {
+			let position = index + 1
+			guard let cell = browserHosts.lazy.compactMap({ self.otpCell(position, in: $0) }).first else {
+				trace("code cell \(position) is gone, the page moved on")
+				return
+			}
+			cell.tap()
+			cell.typeText(String(digit))
 		}
 	}
 
