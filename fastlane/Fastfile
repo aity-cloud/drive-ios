@@ -24,6 +24,8 @@
 
 require "digest"
 require "tempfile"
+require "fileutils"
+require "json"
 
 default_platform(:ios)
 
@@ -51,6 +53,18 @@ AITY_ENVIRONMENT_ISSUERS = {
   "production" => "https://auth.aity.tech/realms/aity",
   "staging" => "https://auth.aity.works/realms/aity"
 }.freeze
+
+def aity_restore_scanned_lock(factory_root = FACTORY_ROOT)
+  relative = "build/upstream/ownCloud.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+  scanned = File.join(factory_root, "vulnerability-source", relative)
+  lock = File.join(factory_root, relative)
+  UI.user_error!("Missing scanned Swift lock - run dependency-inventory in this pipeline") unless File.file?(scanned)
+  contents = File.binread(scanned)
+  UI.user_error!("Empty scanned Swift lock") if JSON.parse(contents).fetch("pins").empty?
+  FileUtils.mkdir_p(File.dirname(lock))
+  File.binwrite(lock, contents)
+  [lock, contents]
+end
 
 def aity_environment
   marker = File.expand_path("../.aity-environment", __dir__)
@@ -586,6 +600,7 @@ platform :ios do
   # Shared store build: match -> identity -> signing -> gym.
   private_lane :aity_build_signed_ipa do |options|
     expected_env = options[:expected_env]
+    swift_lock, scanned_swift_lock = aity_restore_scanned_lock
 
     aity_require_env(%w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 MATCH_PASSWORD MATCH_GIT_PRIVATE_KEY AITY_TEAM_ID])
     env = aity_environment
@@ -652,8 +667,10 @@ platform :ios do
       configuration: "Release",
       output_name: "aity-drive-#{env}-#{build_number}.ipa",
       export_method: "app-store",
+      skip_package_dependencies_resolution: true,
+      disable_package_automatic_updates: true,
       xcargs: (automatic ? "-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic" : "CODE_SIGN_STYLE=Manual") +
-              " APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
+              " -onlyUsePackageVersionsFromResolvedFile APP_BUILD_FLAGS='" + identity_info[:build_flags] + "'",
       # gym pipes xcodebuild through a formatter and runs with pipefail, so a
       # MISSING formatter reports as "** ARCHIVE FAILED **" with exit 127 and
       # hides whatever the build actually did - which is exactly what the
@@ -677,6 +694,8 @@ platform :ios do
         { method: "app-store", signingStyle: "automatic", teamID: team_id } :
         { method: "app-store", provisioningProfiles: profile_map }
     )
+
+    UI.user_error!("Swift resolution changed after scanning") unless File.binread(swift_lock) == scanned_swift_lock
 
     require "tmpdir"
     Dir.mktmpdir do |dir|

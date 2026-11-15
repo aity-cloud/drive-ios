@@ -5,6 +5,12 @@ has not been verified. Read `UPSTREAM.md` first for the Bump procedure.
 
 ## UNVERIFIED - needs the Mac runner
 
+The scanned-lock store-build path still needs its first native Mac execution:
+the publication jobs download the same pipeline's dependency inventory, restore
+its Swift lock after materialization, disable automatic package updates and
+reject a changed lock before upload. Linux checks cover restoration and the
+lane configuration; they do not prove Xcode's resolution or archive behavior.
+
 **Partly verified 2026-08-27** - first green run on the `macos` runner
 (MacBook Air, Xcode 26.2, job 16140937726): materialize + the full
 `aity_apply_identity` transcription (schemes rewritten, ids set on all 7
@@ -77,6 +83,22 @@ When an item is verified, move it from this list into the log below with
 the date and what was found.
 
 ## Traps already hit (Linux authoring, 2026-08-25)
+
+### Swift dependency evidence
+
+Protected pipelines export the resolved Swift lock and scan every pin through
+a CycloneDX inventory. Revision-only pins such as Down retain the exact commit
+as their package version and source-revision property. Trivy 0.69.3 otherwise
+omits these pins from its Package.resolved scan. A recognized revision is
+inventory evidence, not proof that semver-based advisories were evaluated.
+
+The source component `aity-cloud/drive/ios` (the repository's implicit Register
+key) owns revision-level triage of [Down advisories](https://github.com/johnxnguyen/Down/security/advisories)
+and its bundled [cmark advisories](https://github.com/commonmark/cmark/security/advisories).
+Assess them against the commit in the retained lock when the Pin changes or
+an advisory arrives; zero scanner findings do not clear this manual assessment.
+MR pipelines cover the Ruby locks only; Swift resolution runs on protected refs
+with the Mac runner. No separate component or image claim is introduced.
 
 - **`git cat-file -e HEAD:.` fails for the repo root** - the materialize
   `--check` rule special-cases new root-level files (`Gemfile.lock`).

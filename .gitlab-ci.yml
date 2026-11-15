@@ -17,7 +17,7 @@
 # meta/docs/runbooks/publisher-accounts.md. The lanes fail fast with a
 # clear message when any of them is absent.
 
-stages: [materialize, build, smoke, publish-staging, promote, mirror]
+stages: [materialize, build, smoke, vulnerability-scan, vulnerability-gate, publish-staging, promote, mirror]
 
 # Every job runs on our own runner unless it explicitly overrides (the macOS
 # jobs do). gitlab.com instance runners are disabled for the whole aity-cloud
@@ -29,6 +29,7 @@ default:
   interruptible: true
 
 variables:
+  VULNERABILITY_GATE_MODE: report
   # The Pin (ADR 0001). Renovate watches the upstream tag; the ios-sdk
   # submodule has no pin of its own - scripts/materialize.sh checks it out
   # at the commit this app tag records, so bumping UPSTREAM_TAG moves both.
@@ -37,6 +38,7 @@ variables:
 
 workflow:
   rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_TAG
 
@@ -50,7 +52,7 @@ lint:
   tags: [docker, shared]
   interruptible: true
   script:
-    - apk add --no-cache bash git python3 ruby shellcheck yamllint >/dev/null
+    - apk add --no-cache bash git jq python3 ruby shellcheck yamllint >/dev/null
     - shellcheck scripts/*.sh
     - python3 -m py_compile scripts/*.py
     - python3 scripts/check-plists.py
@@ -65,12 +67,16 @@ lint:
     # silently truncates the string, which faked a green smoke on 2026-08-27.
     - ruby scripts/check-fastfile.rb
     - ruby scripts/check-appstore-review.rb
+    - ruby scripts/check-scanned-lock.rb
+    - python3 scripts/check-swift-scan.py
     # Full materialise of both Environments against the real Pin clone:
     # proves the tag exists, the ios-sdk submodule resolves, every patch
     # applies, and every overlay/recipe path still matches the upstream
     # tree (--check). The staging run reuses the production clone.
     - bash scripts/materialize.sh production --check
     - bash scripts/materialize.sh staging --check
+    - mkdir -p vulnerability-source/upstream
+    - cp build/upstream/Gemfile.lock vulnerability-source/upstream/Gemfile.lock
     # The code compares Info.plist identifiers against literals; build 60
     # shipped `com.Aity Drive.background-refresh-task` and lost background
     # refresh. The directives are stripped the way the lane strips them.
@@ -80,6 +86,36 @@ lint:
       if find build/upstream -name Info.plist -exec grep -Hn -e 'Aity Drive\.' -e '\.Aity Drive' {} +; then
         echo "debrand rewrote an identifier"; exit 1
       fi
+  artifacts:
+    paths: [vulnerability-source/upstream/Gemfile.lock]
+
+dependency-inventory:
+  stage: build
+  tags: [macos]
+  resource_group: macos-xcode
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event" && $CI_COMMIT_REF_PROTECTED == "true"'
+  variables:
+    LC_ALL: en_US.UTF-8
+    LANG: en_US.UTF-8
+  script:
+    - bash scripts/materialize.sh production
+    - brew bundle --file Brewfile --no-upgrade
+    - xcodebuild -resolvePackageDependencies -project build/upstream/ownCloud.xcodeproj -scheme ownCloud
+    - |
+      find build/upstream -type f \( -name Package.resolved -o -name Podfile.lock \) |
+        while IFS= read -r lock; do
+          mkdir -p "vulnerability-source/$(dirname "$lock")"
+          cp "$lock" "vulnerability-source/$lock"
+        done
+    - test -n "$(find vulnerability-source -name Package.resolved -print -quit)"
+  artifacts:
+    paths: [vulnerability-source/]
+    expire_in: 90 days
+
+vulnerability-scan:
+  after_script:
+    - sh scripts/scan-swift-dependencies.sh
 
 # The XCUITest sources, type-checked without Xcode. `ruby -c`-grade parsing is
 # not enough: `swiftc -parse` never resolves a name, so a call to a helper that
@@ -110,6 +146,11 @@ typecheck:smoke:
 .macos:
   tags: [macos]
   when: manual
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: manual
+      allow_failure: true
   # One Xcode job at a time on that Mac. setup_ci creates a fixed
   # `fastlane_tmp_keychain`, and match, the DerivedData and the Craft-free
   # build dir are all per-machine, not per-job: two of these in parallel made
@@ -283,6 +324,7 @@ measure:smoke-flakiness:
 # be set as the protected group variable AITY_TEAM_ID.
 bootstrap:apple:
   extends: .macos
+  needs: [vulnerability-gate]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
@@ -299,6 +341,7 @@ bootstrap:apple:
 # One-time: internal tester group + testers + newest build attached.
 setup:testflight-internal:
   extends: .macos
+  needs: [vulnerability-gate]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
@@ -334,6 +377,7 @@ check:appstore:
 # as tags. Read-only on the Mac apart from gems: nothing is built or signed.
 publish:listing:
   extends: .macos
+  needs: [vulnerability-gate]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
@@ -345,6 +389,7 @@ publish:listing:
 # developer panel reads properly; that record is never submitted for review.
 publish:listing-staging:
   extends: .macos
+  needs: [vulnerability-gate]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh staging
@@ -363,6 +408,7 @@ check:app-groups:
 
 publish:staging-testflight:
   extends: .macos
+  needs: [vulnerability-gate, dependency-inventory]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh staging
@@ -384,6 +430,7 @@ publish:staging-testflight:
 # which puts the first build through Beta App Review.
 publish:preprod-testflight:
   extends: .macos
+  needs: [vulnerability-gate, dependency-inventory]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
@@ -400,6 +447,7 @@ publish:preprod-testflight:
 
 promote:production-appstore:
   extends: .macos
+  needs: [vulnerability-gate, dependency-inventory]
   stage: promote
   rules:
     # Promote is the single manual act that moves a release to the public
@@ -423,6 +471,7 @@ promote:production-appstore:
 # Neither job builds, signs or releases.
 .appstore-review:
   extends: .macos
+  needs: [vulnerability-gate]
   stage: promote
   variables:
     AITY_REVIEW_VERSION: "1.0"
@@ -450,6 +499,12 @@ submit:appstore-review:
 # ---------------------------------------------------------------------------
 
 include:
+  - project: aity-cloud/shared
+    ref: bf93f546b56b96ede076b19d4a2aabea33b929e6
+    file: jobs/vulnerability.yml
   - project: aity-cloud/drive/meta
     ref: main
     file: ci/mirror.yml
+
+mirror:github:
+  needs: [vulnerability-gate]
