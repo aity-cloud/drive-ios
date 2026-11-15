@@ -52,7 +52,7 @@ lint:
   tags: [docker, shared]
   interruptible: true
   script:
-    - apk add --no-cache bash git python3 ruby shellcheck yamllint >/dev/null
+    - apk add --no-cache bash git jq python3 ruby shellcheck yamllint >/dev/null
     - shellcheck scripts/*.sh
     - python3 -m py_compile scripts/*.py
     - python3 scripts/check-plists.py
@@ -67,6 +67,8 @@ lint:
     # silently truncates the string, which faked a green smoke on 2026-08-27.
     - ruby scripts/check-fastfile.rb
     - ruby scripts/check-appstore-review.rb
+    - ruby scripts/check-scanned-lock.rb
+    - python3 scripts/check-swift-scan.py
     # Full materialise of both Environments against the real Pin clone:
     # proves the tag exists, the ios-sdk submodule resolves, every patch
     # applies, and every overlay/recipe path still matches the upstream
@@ -109,7 +111,11 @@ dependency-inventory:
     - test -n "$(find vulnerability-source -name Package.resolved -print -quit)"
   artifacts:
     paths: [vulnerability-source/]
-    expire_in: 1 week
+    expire_in: 90 days
+
+vulnerability-scan:
+  after_script:
+    - sh scripts/scan-swift-dependencies.sh
 
 # The XCUITest sources, type-checked without Xcode. `ruby -c`-grade parsing is
 # not enough: `swiftc -parse` never resolves a name, so a call to a helper that
@@ -402,7 +408,7 @@ check:app-groups:
 
 publish:staging-testflight:
   extends: .macos
-  needs: [vulnerability-gate]
+  needs: [vulnerability-gate, dependency-inventory]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh staging
@@ -424,7 +430,7 @@ publish:staging-testflight:
 # which puts the first build through Beta App Review.
 publish:preprod-testflight:
   extends: .macos
-  needs: [vulnerability-gate]
+  needs: [vulnerability-gate, dependency-inventory]
   stage: publish-staging
   script:
     - bash scripts/materialize.sh production
@@ -441,7 +447,7 @@ publish:preprod-testflight:
 
 promote:production-appstore:
   extends: .macos
-  needs: [vulnerability-gate]
+  needs: [vulnerability-gate, dependency-inventory]
   stage: promote
   rules:
     # Promote is the single manual act that moves a release to the public
