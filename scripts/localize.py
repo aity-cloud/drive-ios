@@ -10,10 +10,10 @@ localization. Xcode compiles every language a catalog holds into its
 .lproj, which is what makes iOS offer the app in that language.
 
 Fails (exit 1) when a translation file has no catalog upstream, or when a
-value's format specifiers differ from the English source (a wrong %@ is a
-crash, not a typo). Warns for keys upstream dropped and for strings that
-have no translation yet: a Bump must not wait on translation, the warning
-is the list for the next maintenance pass.
+value's format specifiers or {{name}} variables differ from the English
+source (a wrong %@ is a crash, not a typo). Warns for keys upstream dropped
+and for strings that have no translation yet: a Bump must not wait on
+translation, the warning is the list for the next maintenance pass.
 
 Usage: localize.py <materialised-tree>
 """
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 L10N = REPO_ROOT / "l10n"
 
-SPECIFIER = re.compile(r"%(\d+\$)?[-+ #0]*\d*(\.\d+)?(ll|l|h|q|z|t|j)?[@dDiuUxXoOfeEgGcCsSp%]")
+SPECIFIER = re.compile(r"%(\d+\$)?[-+ #0]*\d*(\.\d+)?(ll|l|h|q|z|t|j)?[@dDiuUxXoOfeEgGcCsSp%]|\{\{\w+\}\}")
 
 
 def specifiers(text: str) -> list[str]:

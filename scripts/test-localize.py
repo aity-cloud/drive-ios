@@ -33,4 +33,5 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "ro" not in json.loads(catalog.read_text())["strings"]["Delete %@"].get("localizations", {})
 
 assert localize.specifiers("%1$@ of %2$ld (%.1f%%)") == sorted(["%1$@", "%2$ld", "%.1f", "%%"])
+assert localize.specifiers("{{count}} of %@") == sorted(["{{count}}", "%@"])
 print("test-localize: ok")

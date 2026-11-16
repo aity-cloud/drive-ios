@@ -47,6 +47,9 @@ def rewrite(value: str, app_name: str) -> str:
 # bundle id instead, keeping upstream's trailing component.
 IDENTIFIER_KEYS = {"CFBundleURLName"}
 
+# Copyright lines stay as upstream wrote them (meta: GPL notices are never removed).
+KEEP_KEYS = {"NSHumanReadableCopyright"}
+
 # Rows we REPURPOSE rather than debrand. Settings > More shows a
 # "Documentation" row whenever branding.url-documentation is set; ours points
 # at the complete corresponding source, so the label says what the row does.
@@ -70,6 +73,8 @@ def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str
                 suffix = value.rsplit(".", 1)[-1] if "." in value else "app"
                 obj[key] = f"{bundle_id}.{suffix}" if bundle_id else value
                 changed.append(f"{path}/{key}")
+            elif key in KEEP_KEYS:
+                continue
             elif isinstance(value, str):
                 if rewrite(value, app_name) != value:
                     obj[key] = rewrite(value, app_name)
@@ -106,7 +111,7 @@ def process_legacy(path: Path, app_name: str) -> int:
     out = []
     for line in text.splitlines(keepends=True):
         match = LEGACY_PAIR.match(line.rstrip("\n"))
-        if match and (MARKS.search(match.group("value")) or match.group("key") in RELABEL):
+        if match and match.group("key") not in KEEP_KEYS and (MARKS.search(match.group("value")) or match.group("key") in RELABEL):
             newline = "\n" if line.endswith("\n") else ""
             value = relabel(match.group("key"), path.parent.stem) or rewrite(match.group("value"), app_name)
             line = match.group("lead") + value + match.group("tail") + newline
@@ -134,6 +139,8 @@ def process_xcstrings(path: Path, app_name: str) -> int:
         return 0
     changed = 0
     for key, entry in strings.items():
+        if key in KEEP_KEYS:
+            continue
         locs = entry.setdefault("localizations", {})
         for locale, loc in locs.items():
             unit = loc.get("stringUnit")
@@ -191,7 +198,7 @@ def main() -> None:
     total_values = 0
     for pattern in ("**/*.xcstrings",):
         for path in tree.glob(pattern):
-            if "/build/" in str(path):
+            if "build" in path.relative_to(tree).parts:
                 continue
             n = process_xcstrings(path, app_name)
             if n:
