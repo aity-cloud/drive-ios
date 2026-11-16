@@ -11,6 +11,8 @@
 //     "Start setup",
 //   - no server URL entry is reachable on the first screen - the profile
 //     is locked (branding.profile-allow-url-configuration = false).
+//   - on a Romanian phone the same screen is Romanian: the Factory's
+//     l10n/ro reached the String Catalogs and iOS selects it.
 //
 // The bundle id and app name arrive via TEST_RUNNER_* environment
 // variables set by the fastlane lane; the defaults match the staging
@@ -51,5 +53,25 @@ final class LoginScreenSmokeTests: XCTestCase {
 			"The locked-profile intro screen must not offer any text entry " +
 			"(branding.profile-allow-url-configuration = false)"
 		)
+	}
+
+	func testLoginScreenIsRomanianOnARomanianPhone() {
+		let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
+		app.launchArguments += ["-AppleLanguages", "(ro)", "-AppleLocale", "ro_RO"]
+		app.launch()
+
+		let welcome = app.staticTexts["Bun venit în \(appName)"]
+		XCTAssertTrue(
+			welcome.waitForExistence(timeout: 60),
+			"'Bun venit în \(appName)' did not appear on a Romanian phone - the ro localization " +
+			"is missing from the bundle or iOS did not select it"
+		)
+		XCTAssertTrue(app.buttons["Începe configurarea"].waitForExistence(timeout: 10),
+		              "'Începe configurarea' missing from the Romanian setup intro screen")
+
+		let screenshot = XCTAttachment(screenshot: app.screenshot())
+		screenshot.name = "login-screen-ro"
+		screenshot.lifetime = .keepAlways
+		add(screenshot)
 	}
 }

@@ -849,6 +849,7 @@ platform :ios do
           "TEST_RUNNER_AITY_CONTRACT_USER='#{contract_user}'",
           "TEST_RUNNER_AITY_CONTRACT_PASSWORD='#{contract_password}'",
           "TEST_RUNNER_AITY_CONTRACT_TOTP_SECRET='#{contract_totp_secret}'",
+          "TEST_RUNNER_AITY_SMOKE_LOCALE='#{ENV['AITY_SMOKE_LOCALE']}'",
           "xcodebuild test",
           "-project '#{smoke_dir}/AityDriveSmoke.xcodeproj'",
           "-scheme AityDriveSmokeUITests",
