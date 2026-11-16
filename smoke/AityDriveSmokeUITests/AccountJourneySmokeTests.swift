@@ -92,6 +92,10 @@ final class AccountJourneySmokeTests: XCTestCase {
 		// class-settings environment source.
 		let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
 		app.launchEnvironment["oc:authentication.browser-session-prefers-ephermal"] = "bool:true"
+		if let locale = ProcessInfo.processInfo.environment["AITY_SMOKE_LOCALE"], !locale.isEmpty {
+			let language = String(locale.prefix { $0 != "_" })
+			app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+		}
 		app.launch()
 
 		XCTAssertTrue(app.wait(for: .runningForeground, timeout: 60), "the app did not reach the foreground")
@@ -137,17 +141,19 @@ final class AccountJourneySmokeTests: XCTestCase {
 				[app.buttons["client.file-add"],
 				 app.navigationBars.buttons["client.file-add"],
 				 app.buttons["Add item"],
-				 app.navigationBars.buttons["Add item"]]
+				 app.buttons["Adaugă un element"],
+				 app.navigationBars.buttons["Add item"],
+				 app.navigationBars.buttons["Adaugă un element"]]
 					.first { $0.exists && $0.isHittable }
 			}, timeout: 60)
 			XCTAssertNotNil(plus,
 			                "the add-content (+) button is missing from the personal space\n\n\(hierarchy(app))")
 			plus?.tap()
 
-			let createFolder = app.buttons["Create folder"].firstMatch
-			XCTAssertTrue(createFolder.waitForExistence(timeout: 20),
-			              "'Create folder' is not in the + menu\n\n\(hierarchy(app))")
-			createFolder.tap()
+			let createFolder = button(app, ["Create folder", "Creează un folder"], timeout: 20)
+			XCTAssertNotNil(createFolder, "'Create folder' is not in the + menu\n\n\(hierarchy(app))")
+			attach(app, named: "add-menu")
+			createFolder?.tap()
 
 			let nameField = app.textFields["name-text-field"]
 			XCTAssertTrue(nameField.waitForExistence(timeout: 20),
@@ -181,14 +187,13 @@ final class AccountJourneySmokeTests: XCTestCase {
 			XCTAssertTrue(cell.exists, "the created folder vanished before it could be deleted")
 			cell.press(forDuration: 1.2)
 
-			let delete = app.buttons["Delete"].firstMatch
-			XCTAssertTrue(delete.waitForExistence(timeout: 20),
-			              "no Delete action in the item context menu\n\n\(hierarchy(app))")
-			delete.tap()
+			let delete = button(app, ["Delete", "Șterge"], timeout: 20)
+			XCTAssertNotNil(delete, "no Delete action in the item context menu\n\n\(hierarchy(app))")
+			attach(app, named: "item-menu")
+			delete?.tap()
 
 			// Destructive actions confirm.
-			let confirm = app.buttons["Delete"].firstMatch
-			if confirm.waitForExistence(timeout: 5) { confirm.tap() }
+			button(app, ["Delete", "Șterge"], timeout: 5)?.tap()
 		}
 
 		XCTAssertTrue(
@@ -206,7 +211,8 @@ final class AccountJourneySmokeTests: XCTestCase {
 	/// every upstream change into a mystery failure - advance whichever known
 	/// step is on screen until the browser hand-off is reached.
 	private func advanceSetupWizard(_ app: XCUIApplication, activity: XCTActivity) {
-		let advanceButtons = ["Start setup", "Continue", "Open login page", "Login"]
+		let advanceButtons = ["Start setup", "Începe configurarea", "Continue", "Continuă",
+		                      "Open login page", "Deschide pagina de conectare", "Login", "Conectare"]
 		let deadline = Date().addingTimeInterval(120)
 
 		while Date() < deadline {
@@ -231,7 +237,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 	private func finishSetupWizard(_ app: XCUIApplication, activity: XCTActivity) {
 		let deadline = Date().addingTimeInterval(180)
 		while Date() < deadline {
-			for label in ["Done", "Skip", "Continue"] {
+			for label in ["Done", "Gata", "Skip", "Omite", "Continue", "Continuă"] {
 				let button = app.buttons[label]
 				if button.exists && button.isHittable {
 					activity.add(XCTAttachment(string: "tapped '\(label)'"))
@@ -457,13 +463,19 @@ final class AccountJourneySmokeTests: XCTestCase {
 			return
 		}
 		field.press(forDuration: 1.2)
-		let selectAll = app.menuItems["Select All"]
-		if selectAll.waitForExistence(timeout: 3) {
+		if let selectAll = waitFor({ ["Select All", "Selectează tot"].lazy.map { app.menuItems[$0] }.first { $0.exists } },
+		                           timeout: 3) {
 			selectAll.tap()
 			return
 		}
 		let existing = (field.value as? String) ?? ""
 		field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
+	}
+
+	// MARK: - Labels in either language the smoke runs in (AITY_SMOKE_LOCALE)
+
+	private func button(_ app: XCUIApplication, _ labels: [String], timeout: TimeInterval) -> XCUIElement? {
+		waitFor({ labels.lazy.map { app.buttons[$0].firstMatch }.first { $0.exists } }, timeout: timeout)
 	}
 
 	// MARK: - Small waiting helpers

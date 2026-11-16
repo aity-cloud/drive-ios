@@ -1,0 +1,9 @@
+{
+  "Authorization failed": "Autorizarea a eșuat",
+  "File Provider access has been disabled by the administrator. Please use the app to create new folders.": "Accesul prin aplicația Fișiere a fost dezactivat de administrator. Folosește aplicația pentru a crea foldere noi.",
+  "File Provider access has been disabled by the administrator. Please use the share extension to import files.": "Accesul prin aplicația Fișiere a fost dezactivat de administrator. Folosește extensia de partajare pentru a importa fișiere.",
+  "Importing files through the File Provider is not allowed on this device.": "Importul de fișiere prin aplicația Fișiere nu este permis pe acest dispozitiv.",
+  "Log into your account %@ in the app for more details.": "Conectează-te la contul %@ în aplicație pentru mai multe detalii.",
+  "Log into your account in the app for more details.": "Conectează-te la cont în aplicație pentru mai multe detalii.",
+  "The destination folder couldn't be found on this server. Moving items across servers is currently not supported.": "Folderul de destinație nu a fost găsit pe acest server. Mutarea elementelor între servere nu este acceptată momentan."
+}

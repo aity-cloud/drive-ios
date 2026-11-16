@@ -56,6 +56,8 @@ lint:
     - shellcheck scripts/*.sh
     - python3 -m py_compile scripts/*.py
     - python3 scripts/check-plists.py
+    - python3 scripts/test-localize.py
+    - python3 scripts/test-debrand.py
     - |
       yamllint -d "{extends: relaxed, rules: {line-length: {max: 160}}}" \
         .gitlab-ci.yml smoke/project.yml

@@ -24,6 +24,9 @@ Repo-specific rules:
   (`scripts/generate-assets.py` from `../meta/brand/logo.svg`).
 - **Zero patches is the target**; a new patch needs the PATCHES.md bar
   ("not shippable without it") and an inventory entry.
+- **Translations are Overlay** (`l10n/<locale>/`, written into upstream's
+  String Catalogs by `scripts/localize.py`). Romanian text goes through the
+  workspace `ro-proofread` skill before it is committed.
 - **Nothing Xcode is verifiable here until the `macos` runner exists** -
   keep MAINTAINING.md's UNVERIFIED list honest: move items out only with
   a real run on the Mac, never by assertion.

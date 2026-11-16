@@ -1,0 +1,10 @@
+{
+  "NSAppleMusicUsageDescription": "Această permisiune este necesară pentru a încărca fișiere media pe server.",
+  "NSFaceIDUsageDescription": "Deblochează aplicația fără să introduci codul de acces.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Această permisiune este necesară pentru încărcarea automată a fotografiilor și videoclipurilor în fundal.",
+  "NSLocationAlwaysUsageDescription": "Această permisiune este necesară pentru încărcarea automată a fotografiilor și videoclipurilor în fundal.",
+  "NSLocationWhenInUseUsageDescription": "Această permisiune este necesară pentru încărcarea automată a fotografiilor și videoclipurilor în fundal.",
+  "NSMicrophoneUsageDescription": "Această permisiune este necesară pentru a înregistra videoclipuri.",
+  "NSPhotoLibraryAddUsageDescription": "Această permisiune este necesară pentru a încărca fotografii și videoclipuri din biblioteca foto.",
+  "NSPhotoLibraryUsageDescription": "Această permisiune este necesară pentru a încărca fotografii și videoclipuri din biblioteca foto."
+}

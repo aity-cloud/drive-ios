@@ -10,7 +10,8 @@
 #   2. copy overlay/common/ over the tree, then overlay/<env>/ over that
 #   3. copy the factory's fastlane/ files and Gemfile over upstream's
 #      (build recipe; upstream's branding flow is transcribed there)
-#   4. apply patches/*.patch (target: zero patches, see PATCHES.md)
+#   4. apply patches/*.patch (target: zero patches, see PATCHES.md), then
+#      write l10n/ into upstream's String Catalogs (scripts/localize.py)
 #   5. record the environment in build/upstream/.aity-environment for the
 #      fastlane lanes
 #
@@ -158,6 +159,10 @@ else
         git -C "${TREE}" apply --verbose "${patch}"
     done
 fi
+
+# --- 4b. the Factory's own languages (l10n/, scripts/localize.py) -----------
+
+python3 "${REPO_ROOT}/scripts/localize.py" "${TREE}"
 
 # --- 5. environment marker --------------------------------------------------
 

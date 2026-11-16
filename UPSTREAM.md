@@ -47,6 +47,11 @@ do not invent parallel mechanisms:
   do not call their lane directly.
 - `doc/BUILD_CUSTOMIZATION.md` - the `build.flags` values
   (`DISABLE_APPSTORE_LICENSING`, `DISABLE_PLAIN_HTTP`, ...).
+- The String Catalogs (`*.xcstrings`, Apple's format). Upstream takes new
+  languages only through Transifex (`owncloud-org/owncloud-ios`) at 75%
+  coverage, so the Factory's own Romanian lives in `l10n/ro/`, one JSON per
+  catalog, and `scripts/localize.py` writes it into the catalogs during
+  materialize. It is Overlay, not a Patch: no source line changes.
 
 ## How to Bump
 
@@ -64,7 +69,11 @@ do not invent parallel mechanisms:
    runner first (runbooks/mac-runner.md).
 6. Refresh `Gemfile.lock` if the Pin's `fastlane/Pluginfile` changed
    (`bundle lock` inside a materialised tree, copy back to the repo root).
-7. Run the simulator smoke, then tag `v<upstream>-aity-1`.
+7. Translate what `localize: warning - ... untranslated` lists in the
+   materialize output into `l10n/ro/`, and drop the keys it reports as no
+   longer upstream. A Bump does not wait on this, but the next release does.
+8. Run the simulator smoke (`AITY_SMOKE_LOCALE=ro_RO` runs the account
+   journey in Romanian), then tag `v<upstream>-aity-1`.
 
 ## Trademark
 

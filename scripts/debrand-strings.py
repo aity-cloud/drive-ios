@@ -47,12 +47,22 @@ def rewrite(value: str, app_name: str) -> str:
 # bundle id instead, keeping upstream's trailing component.
 IDENTIFIER_KEYS = {"CFBundleURLName"}
 
+# Copyright lines stay as upstream wrote them (meta: GPL notices are never removed).
+KEEP_KEYS = {"NSHumanReadableCopyright"}
+
 # Rows we REPURPOSE rather than debrand. Settings > More shows a
 # "Documentation" row whenever branding.url-documentation is set; ours points
 # at the complete corresponding source, so the label says what the row does.
-# Same text in every locale: it names a link, not a sentence to translate.
-RELABEL = {"Documentation": "Source code & licences (GPLv3)",
-           "Send feedback": "Delete account or data"}
+# English in every locale the Factory does not translate itself.
+RELABEL = {"Documentation": {"en": "Source code & licences (GPLv3)",
+                             "ro": "Cod sursă și licențe (GPLv3)"},
+           "Send feedback": {"en": "Delete account or data",
+                             "ro": "Șterge contul sau datele"}}
+
+
+def relabel(key: str, locale: str) -> str | None:
+    labels = RELABEL.get(key)
+    return labels and labels.get(locale, labels["en"])
 
 
 def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str = ""):
@@ -63,6 +73,8 @@ def walk_plist(obj, app_name: str, changed: list, path: str = "", bundle_id: str
                 suffix = value.rsplit(".", 1)[-1] if "." in value else "app"
                 obj[key] = f"{bundle_id}.{suffix}" if bundle_id else value
                 changed.append(f"{path}/{key}")
+            elif key in KEEP_KEYS:
+                continue
             elif isinstance(value, str):
                 if rewrite(value, app_name) != value:
                     obj[key] = rewrite(value, app_name)
@@ -99,9 +111,9 @@ def process_legacy(path: Path, app_name: str) -> int:
     out = []
     for line in text.splitlines(keepends=True):
         match = LEGACY_PAIR.match(line.rstrip("\n"))
-        if match and (MARKS.search(match.group("value")) or match.group("key") in RELABEL):
+        if match and match.group("key") not in KEEP_KEYS and (MARKS.search(match.group("value")) or match.group("key") in RELABEL):
             newline = "\n" if line.endswith("\n") else ""
-            value = RELABEL.get(match.group("key")) or rewrite(match.group("value"), app_name)
+            value = relabel(match.group("key"), path.parent.stem) or rewrite(match.group("value"), app_name)
             line = match.group("lead") + value + match.group("tail") + newline
             changed += 1
         out.append(line)
@@ -127,21 +139,23 @@ def process_xcstrings(path: Path, app_name: str) -> int:
         return 0
     changed = 0
     for key, entry in strings.items():
-        wanted = RELABEL.get(key)
+        if key in KEEP_KEYS:
+            continue
         locs = entry.setdefault("localizations", {})
-        for loc in locs.values():
+        for locale, loc in locs.items():
             unit = loc.get("stringUnit")
             if not isinstance(unit, dict):
                 continue
             value = unit.get("value", "")
+            wanted = relabel(key, locale)
             new = wanted if wanted else (rewrite(value, app_name) if MARKS.search(value) else value)
             if new != value:
                 unit["value"] = new
                 unit["state"] = "translated"
                 changed += 1
-        if (wanted or MARKS.search(key)) and "en" not in locs:
+        if (key in RELABEL or MARKS.search(key)) and "en" not in locs:
             locs["en"] = {"stringUnit": {"state": "translated",
-                                         "value": wanted or rewrite(key, app_name)}}
+                                         "value": relabel(key, "en") or rewrite(key, app_name)}}
             changed += 1
     if changed:
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -184,7 +198,7 @@ def main() -> None:
     total_values = 0
     for pattern in ("**/*.xcstrings",):
         for path in tree.glob(pattern):
-            if "/build/" in str(path):
+            if "build" in path.relative_to(tree).parts:
                 continue
             n = process_xcstrings(path, app_name)
             if n:
