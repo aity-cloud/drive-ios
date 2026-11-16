@@ -316,7 +316,7 @@
   "Import from Clipboard": "Importă din clipboard",
   "Import not allowed": "Importul nu este permis",
   "Import {{itemCount}} files": "Importă fișierele ({{itemCount}})",
-  "Importing %@ media files for upload": "Se importă %@ fișiere media pentru încărcare",
+  "Importing %@ media files for upload": "Se importă fișierele media pentru încărcare (%@)",
   "Importing files through opening is not allowed on this device.": "Importul de fișiere prin deschidere nu este permis pe acest dispozitiv.",
   "Importing files through the Share Extension is not allowed on this device.": "Importul de fișiere prin extensia de partajare nu este permis pe acest dispozitiv.",
   "Importing item %ld of %ld": "Se importă elementul %ld din %ld",

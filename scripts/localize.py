@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 L10N = REPO_ROOT / "l10n"
 
-SPECIFIER = re.compile(r"%(\d+\$)?[-+ #0]*\d*(\.\d+)?(ll|l|h|q|z|t|j)?[@dDiuUxXoOfeEgGcCsSp%]|\{\{\w+\}\}")
+SPECIFIER = re.compile(r"%(\d+\$)?[-+ #0]*\d*(\.\d+)?(ll|l|h|q|z|t|j)?[@dDiuUxXoOfeEgGcCsSp%]|\{\{[^}]+\}\}")
 
 
 def specifiers(text: str) -> list[str]:

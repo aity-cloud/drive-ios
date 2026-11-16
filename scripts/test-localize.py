@@ -34,4 +34,5 @@ with tempfile.TemporaryDirectory() as tmp:
 
 assert localize.specifiers("%1$@ of %2$ld (%.1f%%)") == sorted(["%1$@", "%2$ld", "%.1f", "%%"])
 assert localize.specifiers("{{count}} of %@") == sorted(["{{count}}", "%@"])
+assert localize.specifiers("Open {{app.name }}") == ["{{app.name }}"]
 print("test-localize: ok")
