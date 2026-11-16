@@ -152,6 +152,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 
 			let createFolder = button(app, ["Create folder", "Creează un folder"], timeout: 20)
 			XCTAssertNotNil(createFolder, "'Create folder' is not in the + menu\n\n\(hierarchy(app))")
+			attach(app, named: "add-menu")
 			createFolder?.tap()
 
 			let nameField = app.textFields["name-text-field"]
@@ -188,6 +189,7 @@ final class AccountJourneySmokeTests: XCTestCase {
 
 			let delete = button(app, ["Delete", "Șterge"], timeout: 20)
 			XCTAssertNotNil(delete, "no Delete action in the item context menu\n\n\(hierarchy(app))")
+			attach(app, named: "item-menu")
 			delete?.tap()
 
 			// Destructive actions confirm.
